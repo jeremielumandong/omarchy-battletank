@@ -835,16 +835,24 @@ function stepEnemy(state, enemy, level, paths) {
 
 /**
  * Puts a `type` enemy on the field and returns whether it could. A sniper
- * takes a free sniper post. Every other enemy takes the next of the three
- * ENEMY_SPAWN_SLOTS in rotation, skipping any slot a tank stands on; with all
- * three occupied it returns false and the spawn waits.
+ * takes the first free sniper post; if every post is occupied it falls
+ * through to the slot path below. Every other enemy (and a sniper with no
+ * free post) takes the next of the three ENEMY_SPAWN_SLOTS in rotation,
+ * skipping any slot a tank stands on; with all three occupied it returns
+ * false and the spawn waits.
  */
 function spawnEnemy(state, type) {
-  if (type === "sniper" && state.availableSniperPosts.length > 0) {
-    state.enemies.push(makeEnemyTank(state, type, state.availableSniperPosts.shift()));
-    return true;
-  }
   const tanks = allTanks(state);
+  if (type === "sniper") {
+    const free = state.availableSniperPosts.findIndex(
+      (post) => !tanks.some((tank) => overlaps(tankRect(post), tankRect(tank)))
+    );
+    if (free >= 0) {
+      const [post] = state.availableSniperPosts.splice(free, 1);
+      state.enemies.push(makeEnemyTank(state, type, post));
+      return true;
+    }
+  }
   for (let i = 0; i < ENEMY_SPAWN_SLOTS.length; i++) {
     const cursor = (state.spawnCursor + i) % ENEMY_SPAWN_SLOTS.length;
     const slot = ENEMY_SPAWN_SLOTS[cursor];

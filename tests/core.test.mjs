@@ -264,6 +264,27 @@ test("with every slot occupied the next enemy waits instead of stacking", () => 
   assert.deepEqual(state.spawnQueue, ["grunt"]);
 });
 
+test("a sniper post a tank stands on is skipped; the sniper falls back to a free slot", () => {
+  const level = OPEN_FIELD(1);
+  level.map = [...level.map];
+  level.map[5] = ".....N.......";
+  level.waves = [{ enemies: [{ type: "sniper", count: 1 }] }];
+  const state = toFirstSpawn(createGame([level]));
+  const post = state.availableSniperPosts[0];
+  state.spawnQueue = ["sniper"];
+  state.spawnTicks = 1;
+  state.enemies.push({
+    id: 900, kind: "grunt", x: post.x, y: post.y, dir: "down", moving: false,
+    cooldown: 1e9, hitsLeft: 1, invulnerable: 0, burstLeft: 0, aimTicks: 0, blockedTicks: 0,
+  });
+  run(state, {}, 5);
+  assert.equal(state.enemies.length, 2);
+  const sniper = state.enemies.find((e) => e.kind === "sniper");
+  assert.ok(sniper, "sniper should have spawned despite the post being occupied");
+  assert.ok(slotOf(sniper) >= 0, "sniper falls back to one of the three slots, not stacked on the post");
+  assert.ok(!overlapping(state.enemies[0], sniper));
+});
+
 test("paired hunters enter together at consecutive slots", () => {
   const level = {
     ...OPEN_FIELD(1),
