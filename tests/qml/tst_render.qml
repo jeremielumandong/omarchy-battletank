@@ -23,7 +23,6 @@ TestCase {
     renderStrategy: Canvas.Immediate
 
     property var game: null
-    property var theme: Draw.DEFAULT_THEME
     property var probes: []
     property var samples: []
     property string error: ""
@@ -38,7 +37,7 @@ TestCase {
       // twice the logical coordinates drawFrame paints in.
       var dpr = Screen.devicePixelRatio
       try {
-        Draw.drawFrame(ctx, game, theme)
+        Draw.drawFrame(ctx, game)
         for (var i = 0; i < probes.length; i++)
           out.push(hex(ctx.getImageData(probes[i][0] * dpr, probes[i][1] * dpr, 1, 1).data))
         error = ""
@@ -60,9 +59,8 @@ TestCase {
   }
 
   // Paints `game` and returns the "#RRGGBB" at each [x, y] in `probes`.
-  function paint(game, theme, probes) {
+  function paint(game, probes) {
     screen.game = game
-    screen.theme = theme
     screen.probes = probes
     var before = screen.paints
     screen.requestPaint()
@@ -91,15 +89,9 @@ TestCase {
   }
 
   function test_title_backdrop_and_tank() {
-    var px = paint(titleState(), Draw.DEFAULT_THEME, [[1, 1], titleTrack()])
-    compare(px[0], Draw.DEFAULT_THEME.background)
-    compare(px[1], Draw.DEFAULT_THEME.player)
-  }
-
-  function test_live_theme_reaches_the_pixels() {
-    var px = paint(titleState(), { background: "#123456", player: "#ABCDEF" }, [[1, 1], titleTrack()])
-    compare(px[0], "#123456")
-    compare(px[1], "#ABCDEF")
+    var px = paint(titleState(), [[1, 1], titleTrack()])
+    compare(px[0], Draw.PALETTE.background)
+    compare(px[1], Draw.PALETTE.player)
   }
 
   function test_level_terrain_base_tank_and_hud() {
@@ -109,18 +101,18 @@ TestCase {
     var brick = state.tiles.indexOf("B")
     var bx = (brick % Constants.GRID) * T
     var by = top + Math.floor(brick / Constants.GRID) * T
-    var px = paint(state, Draw.DEFAULT_THEME, [
+    var px = paint(state, [
       [bx, by],
       [bx + 2, by + 2],
       [state.basePos.x + 8, top + state.basePos.y + 8],
       [state.player.x + 2, top + state.player.y + 8],
       [Constants.SCREEN_W - 6, Constants.HUD_HEIGHT / 2],
     ])
-    compare(px[0], Draw.DEFAULT_THEME.brickEdge)
-    compare(px[1], Draw.DEFAULT_THEME.brickFill)
-    compare(px[2], Draw.DEFAULT_THEME.base)
-    compare(px[3], Draw.DEFAULT_THEME.player)
-    compare(px[4], Draw.DEFAULT_THEME.base)
+    compare(px[0], Draw.PALETTE.brickEdge)
+    compare(px[1], Draw.PALETTE.brickFill)
+    compare(px[2], Draw.PALETTE.base)
+    compare(px[3], Draw.PALETTE.player)
+    compare(px[4], Draw.PALETTE.base)
   }
 
   // Qt's engine only fails on code it runs, so every phase's screen runs here.
@@ -131,11 +123,11 @@ TestCase {
       state.phase = phases[i]
       state.enemies = [{ id: 900, kind: "eliteHunter", x: 0, y: 0, dir: "left", moving: false, cooldown: 60, hitsLeft: 2, invulnerable: 0, burstLeft: 0, aimTicks: 0 }]
       state.shells = [{ id: 950, ownerId: 900, x: 40, y: 40, dir: "down", speed: 2 }]
-      paint(state, Draw.DEFAULT_THEME, [])
+      paint(state, [])
     }
     var lost = playingState()
     lost.player = null
     lost.respawnTicks = 30
-    paint(lost, Draw.DEFAULT_THEME, [])
+    paint(lost, [])
   }
 }

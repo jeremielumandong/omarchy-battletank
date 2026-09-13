@@ -1,4 +1,5 @@
-// Level 4 (game-design §2): water hazards, one spawn, ~35% obstacles.
+// Level 4 (game-design §2): water hazards, one spawn, ~35% obstacles. A
+// two-row river crosses mid-map, bridged at the centre and both flanks.
 // New this level: the Hunter enemy, and Water terrain (blocks tanks, not
 // shells), both per §3/§1.
 //
@@ -9,15 +10,15 @@ export const level = {
   name: "Flood Zone",
   map: [
     "......1......",
-    "B.S.B.W.B.B.S",
-    ".B.W.B.B.S.B.",
-    "W.B.B.S.B.W.B",
-    ".B.S.B.W.B.B.",
-    "S.B.W.B.B.S.B",
-    ".NW.B.B.S.B.W",
-    ".B.B.S.B.W.B.",
-    "B.S.B.W.B.B.S",
-    ".B.W.........",
+    ".BB.BB.BB.BB.",
+    ".BB.BS.SB.BB.",
+    ".............",
+    "SB.BB...BB.BS",
+    "WW.WWW.WWW.WW",
+    "WW.WWW.WWW.WW",
+    "......N......",
+    ".BB.B.S.B.BB.",
+    ".BB.B...B.BB.",
     ".............",
     ".....BBB.....",
     "....PBEB.....",

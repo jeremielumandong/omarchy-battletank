@@ -1,7 +1,7 @@
 # Battletank — Game Design Doc
 
-Single-player, NES-style top-down tank battle. 10 hand-authored levels, neon
-visual theme. This doc is the spec an engineer builds against; it contains no
+Single-player, NES-style top-down tank battle. 10 hand-authored levels, gritty
+retro look. This doc is the spec an engineer builds against; it contains no
 code. Numbers marked "default" are the designer's chosen starting values —
 tune them in playtesting, but the *rules that generate them* (Difficulty
 Scaling Rules) should stay the source of truth so the curve doesn't drift
@@ -93,7 +93,7 @@ bars, see [§8](#8-what-we-decided-not-to-do-and-why) for why. Full matrix:
 | 5 | 11 | 40 / 30 / 30 | 1.16 | 40% | Two spawn points, symmetric maze | Multi-wave spawning (2 waves) |
 | 6 | 13 | 25 / 30 / 45 | 1.20 | 45% | Narrower base-approach corridors | Sniper engagement range increases |
 | 7 | 14 | 15 / 30 / 55 | 1.24 | 50% | Multiple lanes converge on base | Hunters spawn and approach in pairs |
-| 8 | 15 | 15 / 30 / 55 | 1.28 | 55% | Base ringed by steel, one brick choke point | Fixed Sniper pair guards the choke point |
+| 8 | 15 | 15 / 30 / 55 | 1.28 | 55% | Base ringed by steel, one brick-framed choke point | Fixed Sniper pair guards the choke point |
 | 9 | 17 | 15 / 30 / 55 | 1.32 | 60% | Two spawn points, 3 waves | Three-wave spawning |
 | 10 | 18 | 15 / 30 / 55 | 1.36 | 65% | Full mix: brick + steel + water combined | Elite Hunter (2-hit kill) capstone enemy |
 
@@ -101,6 +101,34 @@ Enemy mix intentionally plateaus at Level 7 (15/30/55) — from there on,
 difficulty comes from count, speed, and density climbing further, not from
 further composition change. That's a deliberate, stated rule, not a gap in
 the table (see [§4](#4-difficulty-scaling-rules)).
+
+### Map rules
+
+Every map must be winnable and losable as authored. Levels 4–10 once
+shipped with enemy spawns walled off from the player, and 8–10 with a base
+that steel sealed from every shell. Neither was caught, because nothing
+checked the geometry. `tests/levels.test.mjs` now checks every level
+against these rules:
+
+1. **No sealed spawn.** From each enemy entry tile (the three top-row spawn
+   slots and every spawn digit) and each sniper post, a tank can drive to
+   the player spawn. Brick counts as a wall for this check: a map must not
+   rely on enemies tunnelling through.
+2. **No solid row.** No row is wall from edge to edge.
+3. **Collector rows.** Keep a mostly open row every few rows so pockets
+   connect sideways. Build density from lanes and blocks, not from a
+   diagonal weave that seals whole bands. The test does not check this rule
+   directly; rule 1 catches what breaks when it is ignored.
+4. **The base stays breakable.** The tiles touching the base are brick,
+   never steel. An enemy can reach a tile with a steel-free straight line to
+   the base, so Base Destroyed stays a real threat on every level.
+5. **Mirror symmetry.** Terrain is left–right symmetric. Markers (`P`, `N`,
+   spawn digits) are exempt.
+6. **Re-check after every edit**, not once at the end: run
+   `node --test tests/levels.test.mjs`.
+
+The player spawns next to the base on every level, one brick between `P`
+and `E`. This is a deliberate convention and stays unchanged.
 
 ## 3. Enemy Types
 
@@ -144,9 +172,9 @@ base.
 - **Level 7+ change:** Hunters spawn and advance in coordinated pairs
   (stated Level 7 mechanic).
 - **Elite Hunter (Level 10 only):** identical behavior and fire pattern, but
-  takes **2 hits** to destroy, and renders with a pulsing white rim over its
+  takes **2 hits** to destroy, and renders with a pulsing amber rim over its
   base color so the player can immediately tell it's the tougher variant
-  (see [§5](#5-visual-theme-neon)). Exactly one appears, as the level's
+  (see [§5](#5-visual-theme-gritty-retro)). Exactly one appears, as the level's
   capstone encounter, spawned last among its wave.
 
 ## 4. Difficulty Scaling Rules
@@ -169,52 +197,49 @@ here first so the whole curve moves together.
 Applying `SniperShare`/`HunterShare`/`GruntShare` to `EnemyCount(L)` and
 rounding to the nearest whole enemy produces the roster counts in §2.
 
-## 5. Visual Theme (Neon)
+## 5. Visual Theme (Gritty Retro)
 
-Direction: pixel-silhouette sprites (NES-resolution proportions) rendered
-with a thin neon bloom/glow outline — closer to a vector arcade cabinet
-(Tempest, Geometry Wars) crossed with Battle City's readability than to
-flat retro pixel art. Dark near-black backdrop so every neon color pops.
+Direction: a worn NES cartridge. Sprites are pixel silhouettes at NES
+proportions, flat-shaded. Colors are warm, dusty and low-saturation —
+gunmetal, brass, olive drab, brick and steel-blue — on a near-black
+backdrop, like a tank yard at dusk rather than an arcade cabinet. No color
+in the palette reads as neon.
 
 ### Palette
 
-Not a fixed palette: colors come from omarchy's live active theme where a
-theme has an equivalent role, and from a fixed fallback otherwise. This
-replaced an earlier draft of this section that hardcoded all fifteen hex
-values regardless of the user's theme — see docs/architecture.md
-"Rendering" for how the lookup works. The hexes below are the fallback
-values (`DEFAULT_THEME` in `src/render/draw.mjs`), shown so this doc still
-reads as a concrete spec; the "Source" column says whether a given element
-actually uses that hex or is overridden live.
+One fixed palette, the same on every desktop. The game does not read the
+omarchy theme. A theme-sourced accent in hot pink, or a background that
+turns pastel under a light theme, would break the "old war machine" mood.
+This replaced the neon palette and the live-theme lookup of commit
+`aeef455`. The hexes are `PALETTE` in `src/render/draw.mjs`, and
+`tests/render.test.mjs` pins them.
 
-| Element | Fallback hex | Source | Notes |
-|---|---|---|---|
-| Background / void | `#0A0A12` | Theme `background` | Near-black navy is only the fallback for a theme with no active override; a light theme's background applies here too |
-| Player tank | `#00F0FF` | Theme `accent` | The theme's one "this is the highlight" role — always the most visually distinct thing on screen |
-| Grunt enemy | `#FF6A00` | Fixed | Neon orange. No theme role fits a specific enemy type; see "Why enemy/terrain colors stay fixed" below |
-| Sniper enemy | `#FFE600` | Fixed | Neon yellow |
-| Hunter enemy | `#B026FF` | Fixed | Neon violet |
-| Elite Hunter rim (L10) | `#FFFFFF` pulsing over `#B026FF` | Fixed | Pulses ~1Hz; the "this one's different" tell |
-| Brick (destructible) | fill `#3A1220`, edge `#FF3864` | Fixed | Warm neon red-pink edge on dark fill |
-| Steel (indestructible) | fill `#1A2233`, edge `#4DA6FF` | Fixed | Cool blue-grey, reads as "hard" against brick's warm red |
-| Water | fill `#0F3057`, animated edge `#00C2FF` | Fixed | Edge shimmer/scanline animation signals "different rule" (blocks tanks, not shells) |
-| Base | `#39FF14` | Fixed | Neon green — the one thing on the map that must never turn red until it's already destroyed |
-| Shell / projectile | core `#FFFFFF`, glow = firer's color | Fixed | Glow color lets the player read a shot's origin at a glance without checking the HUD |
-| HUD text (primary) | `#FFFFFF` | Theme `foreground` | |
-| HUD accent | `#00F0FF` | Theme `accent` | Matches player color, ties HUD to "you" |
-| HUD danger | `#FF2E4D` | Theme `urgent` | Low lives, base-under-attack flash; `urgent` is already omarchy's "needs attention" role |
+| Element | Hex | Notes |
+|---|---|---|
+| Background / void, banner scrim | `#15140F` | Warm charcoal that reads as oil and dust, not a blue-black space void |
+| Player tank | `#C8A94E` | Brass. The one warm metallic among drab and steel colors, so it is still the most distinct tank |
+| Grunt enemy | `#6B6E47` | Olive drab, the baseline soldier |
+| Sniper enemy | `#C2A876` | Desert tan, lighter and warmer than the Grunt |
+| Hunter enemy | `#46545E` | Dark slate steel-blue, the coldest tank color, for the most aggressive enemy |
+| Elite Hunter rim (L10) | `#E0A030` pulsing over `#46545E` | Amber warning light, pulsing ~1 Hz: the "this one's different" tell |
+| Brick (destructible) | fill `#5C2E1E`, edge and mortar `#9C5A3C` | Rust brown with a sun-bleached edge |
+| Steel (indestructible) | fill `#333F49`, edge and plate `#7C93A0` | Gunmetal, reads as "hard" against the warm brick |
+| Water | fill `#1E3A45`, shimmer edge `#4A90A0` | Deep teal. The shimmer scanline signals a different rule: it blocks tanks, not shells |
+| Base | `#B8B8A0` | Bone-silver, deliberately far from the player's brass so the two never blur together |
+| Shell / projectile | core `#EDEAD9`, outer = firer's color | The core is the brightest value on screen, so shots always stand out. The outer color shows who fired without checking the HUD |
+| HUD text (primary) | `#D9D3BE` | Bone/khaki, never pure white, so the whole screen stays in one warm family |
+| HUD accent | `#C8A94E` | Same as the player color, tying the HUD to "you" |
+| HUD danger | `#B8342A` | Muted brick-red for low lives, a destroyed base and danger headlines. Distinct from the brick edge (more orange) and the Sniper (more yellow) |
 
-**Why enemy/terrain colors stay fixed.** omarchy's theme only exposes 5
-foundational roles (`background`, `foreground`, `accent`, `urgent`,
-`muted`) — enough for one "you" color and a text/background pair, not
-enough to derive 8+ simultaneous, mutually distinct gameplay colors from.
-Deriving them algorithmically from an arbitrary theme risks two enemy
-types (or brick vs. steel) landing too close to tell apart under some
-theme, which breaks the whole point of this section: reading enemy type,
-terrain, and threat "at a glance... without checking the HUD." So these
-stay the fixed neon literals above regardless of the active theme; only
-the colors with a direct theme-role equivalent (background, player/HUD
-accent, HUD text, HUD danger) follow the live theme.
+**Why fixed.** Each color is picked against the others, so enemy type,
+terrain and threat read at a glance without checking the HUD. A palette
+derived from an arbitrary theme could land two enemy types, or brick and
+steel, too close together to tell apart.
+
+**Not decided: the glow.** `src/Overlay.qml` still draws a blurred
+`MultiEffect` copy under the frame, left over from the neon look. Flat,
+dusty colors under bloom may look muddy. Whether to turn the glow off or
+down is a visual call for a person to make on the live overlay.
 
 ### HUD layout
 
@@ -231,13 +256,13 @@ bar — keeps the play area maximal, matches NES-era top-HUD convention):
 └─────────────────────────────────────────────────────────┘
 ```
 
-- **Lives** (top-left): small cyan tank-silhouette icons ×3, not a numeral
+- **Lives** (top-left): small brass tank-silhouette icons ×3, not a numeral
   alone — recognizable at a glance mid-fight.
 - **Level** (top-center): current / total, e.g. `LEVEL 03/10`.
 - **Enemies remaining** (top-right): live numeral counter, decrements as
   enemies are destroyed, including not-yet-spawned enemies in later waves.
-- **Base status dot** `(●)` (far right): green, matches Base color; flashes
-  red for 0.5s on any hit the Base's surrounding brick takes (an early
+- **Base status dot** `(●)` (far right): bone-silver, matches Base color;
+  flashes danger red for 0.5s on any hit the Base's surrounding brick takes (an early
   warning, since the Base itself has no health bar and one hit ends the
   run) — reason: a person who is not watching the base tile directly still
   needs a signal that it's under threat.

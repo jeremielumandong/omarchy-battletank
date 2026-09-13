@@ -3,13 +3,10 @@
 // number. Rendering only reads state, so it can never change the game, and
 // Node tests can check it with a recording fake context.
 //
-// Colors are a parameter, not a constant: Overlay.qml resolves omarchy's
-// live active theme (the Quickshell `Color` singleton, `qs.Commons`) and
-// passes the result in as `theme`. This file stays a plain, deterministic ES
-// module with no Quickshell/QtQuick knowledge — scripts/check.sh enforces
-// that for everything under src/render. See docs/game-design.md §5 and
-// docs/architecture.md "Rendering" for which colors are theme-sourced and
-// why the rest are fixed fallbacks.
+// Every color comes from PALETTE below: one fixed retro palette, the same on
+// every desktop (docs/game-design.md §5). This file stays a plain,
+// deterministic ES module with no Quickshell/QtQuick knowledge —
+// scripts/check.sh enforces that for everything under src/render.
 //
 // A frame is painted back to front: backdrop, HUD strip, playfield (terrain
 // and base, shells, tanks), then the current phase's screen from
@@ -17,31 +14,30 @@
 // improvised. Everything is filled rectangles and text, crisp at whole-number
 // scale; the glow comes from Overlay.qml's MultiEffect, not from here. Blinks
 // and pulses count state.tick, never the clock, so a frame is a pure function
-// of (state, theme).
+// of state.
 import { FIELD, GRID, Glyph, HUD_HEIGHT, SCREEN_H, SCREEN_W, TILE } from "../core/constants.mjs";
 
-// Fallback palette: used for any theme key the caller doesn't supply, and
-// for the game-specific colors omarchy's theme has no equivalent for
-// (enemy types, terrain, base, shell — docs/game-design.md §5 explains why
-// those stay fixed instead of being derived from the theme).
-export const DEFAULT_THEME = Object.freeze({
-  background: "#0A0A12",
-  hudText: "#FFFFFF",
-  hudAccent: "#00F0FF",
-  hudDanger: "#FF2E4D",
-  player: "#00F0FF",
-  grunt: "#FF6A00",
-  sniper: "#FFE600",
-  hunter: "#B026FF",
-  eliteRim: "#FFFFFF",
-  brickFill: "#3A1220",
-  brickEdge: "#FF3864",
-  steelFill: "#1A2233",
-  steelEdge: "#4DA6FF",
-  waterFill: "#0F3057",
-  waterEdge: "#00C2FF",
-  base: "#39FF14",
-  shellCore: "#FFFFFF",
+// The fixed retro palette (docs/game-design.md §5): worn gunmetal, brass,
+// olive drab, brick and steel-blue on a warm near-black. These are the only
+// colors the game ever paints.
+export const PALETTE = Object.freeze({
+  background: "#15140F",
+  hudText: "#D9D3BE",
+  hudAccent: "#C8A94E",
+  hudDanger: "#B8342A",
+  player: "#C8A94E",
+  grunt: "#6B6E47",
+  sniper: "#C2A876",
+  hunter: "#46545E",
+  eliteRim: "#E0A030",
+  brickFill: "#5C2E1E",
+  brickEdge: "#9C5A3C",
+  steelFill: "#333F49",
+  steelEdge: "#7C93A0",
+  waterFill: "#1E3A45",
+  waterEdge: "#4A90A0",
+  base: "#B8B8A0",
+  shellCore: "#EDEAD9",
 });
 
 const FIELD_Y = HUD_HEIGHT; // the playfield sits under the HUD strip
@@ -61,7 +57,7 @@ const FLICKER_TICKS = 4;
 const blinkOn = (tick, halfPeriod) => Math.floor(tick / halfPeriod) % 2 === 0;
 
 // Terrain glyph → palette keys plus the detail that tells the three apart
-// even in a theme-less screenshot. EMPTY has no entry and paints nothing.
+// by shape, not just by color. EMPTY has no entry and paints nothing.
 const TILE_STYLE = Object.freeze({
   [Glyph.BRICK]: { fill: "brickFill", edge: "brickEdge", detail: brickMortar },
   [Glyph.STEEL]: { fill: "steelFill", edge: "steelEdge", detail: steelPlate },
@@ -126,13 +122,9 @@ const PHASE_OVERLAY = Object.freeze({
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {import("../core/engine.mjs").GameState} state
- * @param {Partial<typeof DEFAULT_THEME>} [theme] Live-resolved colors; any
- *   key left out falls back to DEFAULT_THEME.
  */
-export function drawFrame(ctx, state, theme = DEFAULT_THEME) {
-  // Qt's JS engine doesn't parse object-spread (docs/architecture.md
-  // "Second risk"), so this merges with Object.assign instead of `{...}`.
-  const palette = Object.assign({}, DEFAULT_THEME, theme);
+export function drawFrame(ctx, state) {
+  const palette = PALETTE;
   ctx.fillStyle = palette.background;
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
   ctx.textBaseline = "middle";
@@ -226,7 +218,7 @@ function drawShells(ctx, state, palette) {
   for (const shell of state.shells) {
     const owner = findTank(state, shell.ownerId);
     const y = FIELD_Y + shell.y;
-    // A shell can outlive its firer; with no one to take a color from, it glows plain white.
+    // A shell can outlive its firer; with no one to take a color from, it glows in the shell core color.
     ctx.fillStyle = owner ? palette[TANK_COLOR[owner.kind]] : palette.shellCore;
     ctx.fillRect(shell.x, y, SHELL_SIZE, SHELL_SIZE);
     ctx.fillStyle = palette.shellCore;
@@ -243,7 +235,7 @@ function findTank(state, id) {
 function drawTanks(ctx, state, palette) {
   for (const enemy of state.enemies) {
     const color = palette[TANK_COLOR[enemy.kind]];
-    // A sniper's white barrel is its 0.3 s aim-flash telegraph (game-design §3).
+    // A sniper's shellCore-colored barrel is its 0.3 s aim-flash telegraph (game-design §3).
     const barrel = enemy.aimTicks > 0 ? palette.shellCore : color;
     drawTank(ctx, enemy.x, FIELD_Y + enemy.y, enemy.dir, color, barrel, palette);
     if (enemy.kind === "eliteHunter" && blinkOn(state.tick, PULSE_TICKS)) {

@@ -1,4 +1,5 @@
-// Level 2 (game-design §2): brick maze corridors, one spawn, ~25% obstacles.
+// Level 2 (game-design §2): mirror-symmetric brick maze corridors, one spawn,
+// ~20% obstacles.
 // New this level: the Sniper enemy (introduced here per §3).
 //
 // Glyphs: . empty  B brick  S steel  W water  E base  P player spawn
@@ -8,15 +9,15 @@ export const level = {
   name: "Brick Maze",
   map: [
     "......1......",
+    "..B.B...B.B..",
+    ".B...B.B...B.",
     "B..B..B..B..B",
-    "..B..B..B..B.",
-    ".B..B..B..B..",
-    "B..B..B..B..B",
-    "..B..B..B..B.",
-    ".NB..B..B..B.",
-    ".B..B..B..B..",
-    "B..B..B..B..B",
-    "..B..B.......",
+    "..B...N...B..",
+    ".B..B...B..B.",
+    "...B.B.B.B...",
+    "..B.B...B.B..",
+    "....B...B....",
+    ".............",
     ".............",
     ".....BBB.....",
     "....PBEB.....",

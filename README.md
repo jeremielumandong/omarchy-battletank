@@ -1,6 +1,6 @@
 # Battletank
 
-NES-style top-down tank battle for Omarchy: 10 levels, neon graphics. It runs
+NES-style top-down tank battle for Omarchy: 10 levels, gritty retro graphics. It runs
 as an Omarchy shell overlay plugin.
 
 > Status: scaffold. The architecture, level format and tests exist; the game

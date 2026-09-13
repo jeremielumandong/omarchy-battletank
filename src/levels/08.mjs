@@ -1,5 +1,7 @@
 // Level 8 (game-design §2): base ringed by steel with one brick choke point,
-// ~55% obstacles. New this level: a fixed sniper pair guards the choke point.
+// ~55% obstacles. A moated steel ring encloses the base and player spawn; its
+// only way in is a one-tile gate between two bricks, straight above the base.
+// New this level: a fixed sniper pair guards the choke point.
 //
 // Glyphs: . empty  B brick  S steel  W water  E base  P player spawn
 //         1-3 enemy spawns  N sniper post (a sniper from the waves starts here)
@@ -8,18 +10,18 @@ export const level = {
   name: "The Bastion",
   map: [
     "..1.......2..",
-    "BSBWBBSBWBBSB",
-    "WBBSBWBBSBWBB",
-    "SBWBBSBWBBSBW",
-    "BBSBWBBSBWBBS",
-    "BWBBSBWBBSBWB",
-    "BSBWBBSBWBBSB",
-    "WBBSBWBBS....",
-    ".............",
-    ".....N.N.....",
-    "......B......",
-    ".....SSS.....",
-    "....PSES.....",
+    ".BB.BBSBB.BB.",
+    ".BW.BBSBB.WB.",
+    ".BB.......BB.",
+    "...SBB.BBS...",
+    "BB.SBB.BBS.BB",
+    "BB.........BB",
+    "BBBBS.W.SBBBB",
+    "BB..N...N..BB",
+    "BBSSSB.BSSSBB",
+    "WWS.......SWW",
+    "WWS..BBB..SWW",
+    "WWS.PBEB..SWW",
   ],
   speedMult: 1.28,
   waves: [

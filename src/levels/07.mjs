@@ -1,4 +1,5 @@
 // Level 7 (game-design §2): multiple lanes converge on base, ~50% obstacles.
+// Five top lanes meet at row 5, then staircase lanes funnel into row 10.
 // New this level: Hunters spawn and advance in pairs (rules.hunterPairs), per
 // §3's "Level 7+ change". Enemy mix plateaus at 15/30/55 from here on (§2).
 //
@@ -9,18 +10,18 @@ export const level = {
   name: "Converging Lanes",
   map: [
     "..1.......2..",
-    "BSBWBBSBWBBSB",
-    "WBBSBWBBSBWBB",
-    "SBWBBSBWBBSBW",
-    "BBSBWBBSBWBBS",
-    "BWBBSBWBBSBWB",
-    "BNSBWBBSBWBNB",
-    "SBWB.........",
-    ".............",
-    ".............",
-    ".............",
-    ".....BBB.....",
-    "....PBEB.....",
+    ".BB.BB.BB.BB.",
+    ".BS.BW.WB.SB.",
+    ".BB.BW.WB.BB.",
+    ".BB.BB.BB.BB.",
+    "...N.....N...",
+    ".BBB..S..BBB.",
+    "..BBB...BBB..",
+    "B..BBB.BBB..B",
+    "BB..BB.BB..BB",
+    "BBB.......BBB",
+    "BBB..BBB..BBB",
+    "BBB.PBEB..BBB",
   ],
   speedMult: 1.24,
   waves: [
