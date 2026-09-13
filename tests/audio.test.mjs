@@ -1,8 +1,6 @@
 // Pins the audio policy (docs/audio-architecture.md). The first group passes
 // now: src/audio/cues.mjs is the design, not a stub. The "engine emits" group
-// is the acceptance bar for item (a), the three GameEvent kinds engine.mjs
-// does not emit yet. It is marked todo, so it reports without failing the
-// suite; drop each `todo` once its case passes.
+// pins the three GameEvent kinds item (a) added to engine.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -171,7 +169,7 @@ test("a life lost with lives left still emits tankLost", () => {
   assert.ok(kindsOf(state).includes("tankLost"));
 });
 
-test("engine emits enemyDestroyed on a kill, not on a non-lethal hit", { todo: "item (a)" }, () => {
+test("engine emits enemyDestroyed on a kill, not on a non-lethal hit", () => {
   const state = playingWithOneEnemy();
   const enemy = state.enemies[0];
   enemy.hitsLeft = 2;
@@ -186,7 +184,7 @@ test("engine emits enemyDestroyed on a kill, not on a non-lethal hit", { todo: "
   assert.ok(kindsOf(state).includes("enemyDestroyed"));
 });
 
-test("engine emits gameOver, and no tankLost, on the last life", { todo: "item (a)" }, () => {
+test("engine emits gameOver, and no tankLost, on the last life", () => {
   const state = playingWithOneEnemy();
   state.lives = 1;
   shellInside(state, state.enemies[0], state.player);
@@ -196,7 +194,7 @@ test("engine emits gameOver, and no tankLost, on the last life", { todo: "item (
   assert.ok(!kindsOf(state).includes("tankLost"));
 });
 
-test("engine emits gameOver once when a destroyed base reaches Game Over", { todo: "item (a)" }, () => {
+test("engine emits gameOver once when a destroyed base reaches Game Over", () => {
   const state = playingWithOneEnemy();
   shellAt(state, state.player, 6 * TILE + 6, 12 * TILE + 6);
   step(state, emptyInput());
@@ -207,7 +205,7 @@ test("engine emits gameOver once when a destroyed base reaches Game Over", { tod
   assert.deepEqual(kinds.filter((kind) => kind === "gameOver"), ["gameOver"]);
 });
 
-test("engine emits complete once after the last level clears", { todo: "item (a)" }, () => {
+test("engine emits complete once after the last level clears", () => {
   const state = playingWithOneEnemy();
   shellInside(state, state.player, state.enemies[0]);
   step(state, emptyInput());

@@ -1,12 +1,16 @@
 # Battletank audio
 
-Status: **draft** by @architect on 2026-09-13. The game makes no sound yet.
+Status: **built** on 2026-09-13. Designed by @architect, implemented by
+@engineer.
 
 What exists today:
-- **Drafted and tested:** the audio policy `src/audio/cues.mjs` and its pins
-  `tests/audio.test.mjs` and `tests/qml/tst_audio_import.qml`.
-- **Enforced:** `scripts/check.sh` now keeps `src/audio` as plain ES modules.
-- **Not built:** `src/Audio.qml`, the assets, and the three engine events.
+- **Built and tested:** the audio policy `src/audio/cues.mjs`, the three
+  engine events, `src/Audio.qml` and its `Overlay.qml` wiring. The pins are
+  `tests/audio.test.mjs`, `tests/qml/tst_audio_import.qml` and
+  `tests/qml/tst_audio.qml`.
+- **Placeholder assets:** `assets/audio/`, synthesized with ffmpeg. Real
+  sounds are still open item 1 below.
+- **Enforced:** `scripts/check.sh` keeps `src/audio` as plain ES modules.
 
 Game rules stay in [`architecture.md`](architecture.md) and
 [`game-design.md`](game-design.md).

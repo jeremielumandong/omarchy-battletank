@@ -43,8 +43,7 @@ export const TRACK_IDS = Object.freeze(["title", "battle"]);
 
 // One entry per GameEvent kind in engine.mjs. tests/audio.test.mjs fails when
 // a real run emits a kind with no entry, so a new event cannot go silently
-// unheard. enemyDestroyed, gameOver and complete are the kinds the engine
-// does not emit yet (docs/audio-architecture.md, item a).
+// unheard.
 export const EVENT_CUES = Object.freeze({
   shot: "shot",
   explosion: "hit", // any tank hit, including a non-lethal Elite Hunter hit
