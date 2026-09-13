@@ -110,12 +110,33 @@ steps (see README).
     two tiles, so the grid lookup is exact.
   - Tank against tank and shell against tank or shell use AABB checks. At
     about 30 entities an O(n²) pass is fine.
-- **Rendering** (`src/render/draw.mjs`): `drawFrame(ctx, state)` paints one
-  `Canvas` at logical 208×224 (HUD plus playfield). The canvas is scaled by a
-  whole number without smoothing.
+- **Rendering** (`src/render/draw.mjs`): `drawFrame(ctx, state, theme)` paints
+  one `Canvas` at logical 208×224 (HUD plus playfield). The canvas is scaled
+  by a whole number without smoothing.
   - Neon glow is a blurred `MultiEffect` copy under the crisp frame, so each
     colour glows in its own hue.
   - The renderer only reads state.
+  - **Colors come from omarchy's live active theme, not a fixed palette.**
+    `src/Overlay.qml` imports `qs.Commons` (the Quickshell `Color` singleton
+    every omarchy-shell plugin reads — `/usr/share/omarchy/shell/Commons/
+    Color.qml`, same pattern as first-party `emojis/Emojis.qml`). `Color` is
+    populated from `~/.local/state/omarchy/current/theme/colors.toml` at
+    startup and reassigned in place by `shell.qml`'s `applyTheme` IPC call on
+    a theme switch, so `Overlay.qml` re-reading `Color.*` on every paint is
+    enough to track live theme changes without polling a file.
+  - `Overlay.qml.liveTheme()` maps the theme's 5 foundational roles onto the
+    game's semantically-closest colors (background → `background`, player
+    tank and HUD accent → `accent`, HUD text → `foreground`, HUD danger →
+    `urgent`) and passes that plain object into `Draw.drawFrame`. Everything
+    else `drawFrame` needs — enemy types, terrain, base, shell — has no
+    theme equivalent (only 5 roles exist; 8+ simultaneous gameplay-semantic
+    colors can't be derived from them without risking two enemy types
+    becoming indistinguishable under some theme) and falls back to
+    `Draw.DEFAULT_THEME`, the fixed neon literals from game-design §5.
+  - `src/render/draw.mjs` itself stays theme-agnostic like the rest of
+    `src/core`/`src/render`: it takes `theme` as a parameter and never
+    imports Quickshell. `scripts/check.sh`'s plain-ES-module grep enforces
+    that boundary the same way it does for `src/core`.
 
 ## Layout
 
@@ -159,11 +180,11 @@ can still throw in the shell. Qt 6.11 lacks `Array.prototype.flatMap`, and
 
 ## Open (needs a person)
 
-1. Does "omarchy team" mean "omarchy **theme**"? The palette is fixed per
-   game-design §5. Tinting it from the active theme's accent is possible but
-   not planned.
-2. Proving the live shell behaviour (loop stops after `hide`, frame pacing,
-   which monitor the overlay opens on) means enabling the plugin in the user's
-   running desktop.
-3. A licence. The user's other plugins are MIT, but this repo has none until
+1. Proving the live shell behaviour (loop stops after `hide`, frame pacing,
+   which monitor the overlay opens on, and — since the render task — that a
+   real theme switch actually repaints the overlay's colors) means enabling
+   the plugin in the user's running desktop. Verified so far only by source
+   inspection of the `Color` singleton contract and a Node-level mock of the
+   color lookup path (`tests/render.test.mjs`), not by a live theme switch.
+2. A licence. The user's other plugins are MIT, but this repo has none until
    someone chooses.

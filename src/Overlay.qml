@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Effects
+import qs.Commons
 import "core/constants.mjs" as Constants
 import "core/engine.mjs" as Engine
 import "levels/index.mjs" as Levels
@@ -17,6 +18,14 @@ import "render/draw.mjs" as Draw
 //
 // This file owns only window, keys, loop and paint. Game rules live in
 // core/engine.mjs, and QML never decides anything about the game.
+//
+// Colors come from the live active theme: `Color` (qs.Commons, the same
+// Quickshell singleton Emojis.qml reads) is populated from
+// ~/.local/state/omarchy/current/theme/colors.toml and updated in place on a
+// theme switch, so re-reading it each paint is enough to track it live —
+// docs/architecture.md "Rendering" and docs/game-design.md §5 have the
+// theme-vs-fallback color mapping. draw.mjs stays theme-agnostic: this file
+// resolves the live values and hands them in as plain strings.
 //
 // STUB: wiring is complete, but Engine.createGame and Engine.step still
 // throw. Until they are implemented, open() shows the fault panel.
@@ -93,6 +102,20 @@ Item {
     return phase === "title" || phase === "gameOver" || phase === "complete"
   }
 
+  // The 5 foundational Color roles are the only ones generic enough to fit
+  // an overlay: no shell.toml surface exists for a game. Everything else
+  // drawFrame needs (enemy/terrain/base colors) has no theme equivalent and
+  // comes from Draw.DEFAULT_THEME instead — see docs/game-design.md §5.
+  function liveTheme() {
+    return {
+      background: String(Color.background),
+      hudText: String(Color.foreground),
+      hudAccent: String(Color.accent),
+      hudDanger: String(Color.urgent),
+      player: String(Color.accent),
+    }
+  }
+
   function directionFor(key) {
     switch (key) {
     case Qt.Key_Up: case Qt.Key_W: return "up"
@@ -126,7 +149,7 @@ Item {
     id: panel
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
-    color: Draw.BACKGROUND
+    color: Color.background
 
     WlrLayershell.namespace: "arkane-battletank"
     WlrLayershell.layer: WlrLayer.Overlay
@@ -172,7 +195,7 @@ Item {
           anchors.fill: parent
           smooth: false
           onPaint: {
-            if (root.game) Draw.drawFrame(getContext("2d"), root.game)
+            if (root.game) Draw.drawFrame(getContext("2d"), root.game, root.liveTheme())
           }
         }
       }

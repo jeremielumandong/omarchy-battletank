@@ -178,22 +178,43 @@ flat retro pixel art. Dark near-black backdrop so every neon color pops.
 
 ### Palette
 
-| Element | Hex | Notes |
-|---|---|---|
-| Background / void | `#0A0A12` | Near-black navy, not pure black — keeps some depth in bloom |
-| Player tank | `#00F0FF` | Cyan — always the most visually distinct thing on screen |
-| Grunt enemy | `#FF6A00` | Neon orange |
-| Sniper enemy | `#FFE600` | Neon yellow |
-| Hunter enemy | `#B026FF` | Neon violet |
-| Elite Hunter rim (L10) | `#FFFFFF` pulsing over `#B026FF` | Pulses ~1Hz; the "this one's different" tell |
-| Brick (destructible) | fill `#3A1220`, edge `#FF3864` | Warm neon red-pink edge on dark fill |
-| Steel (indestructible) | fill `#1A2233`, edge `#4DA6FF` | Cool blue-grey, reads as "hard" against brick's warm red |
-| Water | fill `#0F3057`, animated edge `#00C2FF` | Edge shimmer/scanline animation signals "different rule" (blocks tanks, not shells) |
-| Base | `#39FF14` | Neon green — the one thing on the map that must never turn red until it's already destroyed |
-| Shell / projectile | core `#FFFFFF`, glow = firer's color | Glow color lets the player read a shot's origin at a glance without checking the HUD |
-| HUD text (primary) | `#FFFFFF` | |
-| HUD accent | `#00F0FF` | Matches player color, ties HUD to "you" |
-| HUD danger | `#FF2E4D` | Low lives, base-under-attack flash |
+Not a fixed palette: colors come from omarchy's live active theme where a
+theme has an equivalent role, and from a fixed fallback otherwise. This
+replaced an earlier draft of this section that hardcoded all fifteen hex
+values regardless of the user's theme — see docs/architecture.md
+"Rendering" for how the lookup works. The hexes below are the fallback
+values (`DEFAULT_THEME` in `src/render/draw.mjs`), shown so this doc still
+reads as a concrete spec; the "Source" column says whether a given element
+actually uses that hex or is overridden live.
+
+| Element | Fallback hex | Source | Notes |
+|---|---|---|---|
+| Background / void | `#0A0A12` | Theme `background` | Near-black navy is only the fallback for a theme with no active override; a light theme's background applies here too |
+| Player tank | `#00F0FF` | Theme `accent` | The theme's one "this is the highlight" role — always the most visually distinct thing on screen |
+| Grunt enemy | `#FF6A00` | Fixed | Neon orange. No theme role fits a specific enemy type; see "Why enemy/terrain colors stay fixed" below |
+| Sniper enemy | `#FFE600` | Fixed | Neon yellow |
+| Hunter enemy | `#B026FF` | Fixed | Neon violet |
+| Elite Hunter rim (L10) | `#FFFFFF` pulsing over `#B026FF` | Fixed | Pulses ~1Hz; the "this one's different" tell |
+| Brick (destructible) | fill `#3A1220`, edge `#FF3864` | Fixed | Warm neon red-pink edge on dark fill |
+| Steel (indestructible) | fill `#1A2233`, edge `#4DA6FF` | Fixed | Cool blue-grey, reads as "hard" against brick's warm red |
+| Water | fill `#0F3057`, animated edge `#00C2FF` | Fixed | Edge shimmer/scanline animation signals "different rule" (blocks tanks, not shells) |
+| Base | `#39FF14` | Fixed | Neon green — the one thing on the map that must never turn red until it's already destroyed |
+| Shell / projectile | core `#FFFFFF`, glow = firer's color | Fixed | Glow color lets the player read a shot's origin at a glance without checking the HUD |
+| HUD text (primary) | `#FFFFFF` | Theme `foreground` | |
+| HUD accent | `#00F0FF` | Theme `accent` | Matches player color, ties HUD to "you" |
+| HUD danger | `#FF2E4D` | Theme `urgent` | Low lives, base-under-attack flash; `urgent` is already omarchy's "needs attention" role |
+
+**Why enemy/terrain colors stay fixed.** omarchy's theme only exposes 5
+foundational roles (`background`, `foreground`, `accent`, `urgent`,
+`muted`) — enough for one "you" color and a text/background pair, not
+enough to derive 8+ simultaneous, mutually distinct gameplay colors from.
+Deriving them algorithmically from an arbitrary theme risks two enemy
+types (or brick vs. steel) landing too close to tell apart under some
+theme, which breaks the whole point of this section: reading enemy type,
+terrain, and threat "at a glance... without checking the HUD." So these
+stay the fixed neon literals above regardless of the active theme; only
+the colors with a direct theme-role equivalent (background, player/HUD
+accent, HUD text, HUD danger) follow the live theme.
 
 ### HUD layout
 
