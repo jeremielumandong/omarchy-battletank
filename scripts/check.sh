@@ -17,9 +17,9 @@ if ! jq -e 'has("keepLoaded") | not' manifest.json >/dev/null; then
 fi
 
 echo "== plain ES modules"
-if grep -rnE "Quickshell|QtQuick|^\.pragma|Math\.random|Date\.now" src/core src/levels src/render |
+if grep -rnE "Quickshell|QtQuick|QtMultimedia|^\.pragma|Math\.random|Date\.now" src/core src/levels src/render src/audio |
   grep -vE '^[^:]+:[0-9]+:\s*//'; then
-  echo "src/core, src/levels and src/render must stay plain, deterministic ES modules" >&2
+  echo "src/core, src/levels, src/render and src/audio must stay plain, deterministic ES modules" >&2
   exit 1
 fi
 
