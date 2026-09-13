@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "arkane.battletank",
+  "name": "Battletank",
+  "version": "0.1.0",
+  "author": "arkane",
+  "description": "NES-style top-down tank battle: 10 levels, neon graphics. Launch with: omarchy-shell shell toggle arkane.battletank '{}'",
+  "kinds": [
+    "overlay"
+  ],
+  "entryPoints": {
+    "overlay": "src/Overlay.qml"
+  }
+}
