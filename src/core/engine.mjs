@@ -360,14 +360,19 @@ function otherTanks(state, tank) {
   return all.filter((t) => t.id !== tank.id);
 }
 
-function canOccupy(rect, tiles, blockers) {
+/**
+ * Whether a tank may move into `rect`. A tank it already overlaps at `from`
+ * does not block it: otherwise two stacked tanks could never drive apart.
+ */
+function canOccupy(rect, tiles, blockers, from) {
   if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > FIELD || rect.y + rect.h > FIELD) return false;
   for (const { col, row } of tilesUnder(rect)) {
     const glyph = tileAt(tiles, col, row);
     if (glyph === null || TERRAIN[glyph].blocksTank) return false;
   }
   for (const other of blockers) {
-    if (overlaps(rect, tankRect(other))) return false;
+    const box = tankRect(other);
+    if (overlaps(rect, box) && !overlaps(from, box)) return false;
   }
   return true;
 }
@@ -389,7 +394,7 @@ function moveTank(tank, dir, speed, tiles, blockers) {
   const nx = tank.x + dx * speed;
   const ny = tank.y + dy * speed;
   const rect = { x: nx, y: ny, w: TILE, h: TILE };
-  if (!canOccupy(rect, tiles, blockers)) {
+  if (!canOccupy(rect, tiles, blockers, tankRect(tank))) {
     tank.moving = false;
     return false;
   }

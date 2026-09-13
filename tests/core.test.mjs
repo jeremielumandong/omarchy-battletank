@@ -112,6 +112,36 @@ test("the player covers 60 px in 60 ticks on open ground", () => {
   assert.equal(state.player.y, 6 * TILE);
 });
 
+const overlapping = (a, b) =>
+  a.x < b.x + TILE && b.x < a.x + TILE && a.y < b.y + TILE && b.y < a.y + TILE;
+
+// Regression: canOccupy rejected every rect touching another tank, including
+// one the mover already overlapped, so two tanks that ever overlapped (an
+// enemy spawned onto an occupied spawn point) could never move apart again.
+test("a tank that already overlaps another can drive out of it", () => {
+  const state = intoPlaying(createGame([OPEN]));
+  state.player.invulnerable = 10_000;
+  // Stacked exactly, as spawning onto an occupied spawn point left them.
+  const enemy = state.enemies[0];
+  enemy.x = state.player.x;
+  enemy.y = state.player.y;
+  const y0 = state.player.y;
+  run(state, { dir: "down" }, 20);
+  assert.ok(state.player.y > y0, `player stayed at y=${state.player.y}`);
+});
+
+test("tanks stay solid to each other: the player stops at an enemy, never inside it", () => {
+  const state = intoPlaying(createGame([OPEN]));
+  state.player.invulnerable = 10_000;
+  const enemy = state.enemies[0];
+  enemy.x = 0;
+  enemy.y = 9 * TILE;
+  for (let i = 0; i < 90; i++) {
+    run(state, { dir: "down" }, 1);
+    for (const e of state.enemies) assert.ok(!overlapping(state.player, e), `overlap at tick ${i}`);
+  }
+});
+
 test("a player shell destroys the brick it hits", () => {
   const state = intoPlaying(createGame([OPEN]));
   assert.equal(state.player.dir, "up");
