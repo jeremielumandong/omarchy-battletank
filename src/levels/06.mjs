@@ -1,4 +1,5 @@
 // Level 6 (game-design §2): narrower base-approach corridors, ~45% obstacles.
+// Open top half; rows 7-9 wall off the base, passable only by two 1-tile gates.
 // New this level: sniper engagement range increases (rules.sniperRangeTiles),
 // per §3's "Level 6+ change".
 //
@@ -9,18 +10,18 @@ export const level = {
   name: "Narrow Approach",
   map: [
     "..1.......2..",
-    "BSBWBBSBWBBSB",
-    "WBBSBWBBSBWBB",
-    "SBWBBSBWBBSBW",
-    "BBSBWBBSBWBBS",
-    "BWBBSBWBBSBWB",
-    "BNSBWBB....N.",
+    ".BB.BB.BB.BB.",
+    ".BS.B...B.SB.",
     ".............",
-    ".............",
-    ".............",
-    ".............",
-    ".....BBB.....",
-    "....PBEB.....",
+    "BB.SSB.BSS.BB",
+    "BB.B.....B.BB",
+    ".N.........N.",
+    "BBBB.BBB.BBBB",
+    "BWWB.BSB.BWWB",
+    "BWWB.BSB.BWWB",
+    "BB.........BB",
+    "BB...BBB...BB",
+    "B...PBEB....B",
   ],
   speedMult: 1.2,
   waves: [

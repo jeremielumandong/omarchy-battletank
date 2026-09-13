@@ -1,4 +1,5 @@
-// Level 3 (game-design §2): steel wall clusters, one spawn, ~30% obstacles.
+// Level 3 (game-design §2): mirror-symmetric steel wall clusters, one spawn,
+// ~27% obstacles.
 // New this level: Steel (indestructible) terrain, per §3/§1's collision matrix.
 //
 // Glyphs: . empty  B brick  S steel  W water  E base  P player spawn
@@ -8,17 +9,17 @@ export const level = {
   name: "Steel Yard",
   map: [
     "......1......",
-    "B..S..B..B..B",
-    "..B..S..B..B.",
-    ".B..B..S..B..",
-    "B..B..B..S..B",
-    "..B..B..B..S.",
-    ".NB..B..B..B.",
-    ".S..B..B..B..",
-    "B..S..B..B..B",
-    "..B..S..B..B.",
-    ".B..B..S..B..",
-    "B..B.BBB.B...",
+    "..S.B.B.B.S..",
+    ".B...S.S...B.",
+    "S..B..B..B..S",
+    "..B...N...B..",
+    ".S..B.B.B..S.",
+    ".B.B.S.S.B.B.",
+    "..S.S...S.S..",
+    "..B.B...B.B..",
+    "...B.BBB.B...",
+    ".............",
+    ".....BBB.....",
     "....PBEB.....",
   ],
   speedMult: 1.08,

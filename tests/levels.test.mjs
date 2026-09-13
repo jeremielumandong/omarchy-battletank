@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { enemyTotal, loadLevels, obstacleDensity, validateLevel } from "../src/core/levels.mjs";
+import { GRID } from "../src/core/constants.mjs";
 import { levels } from "../src/levels/index.mjs";
 import { level as level01 } from "../src/levels/01.mjs";
 
@@ -32,6 +33,83 @@ test("levels follow the game-design §4 scaling rules", () => {
     assert.ok(Math.abs(obstacleDensity(level) - target) <= 0.05, `level ${L} density ${obstacleDensity(level)} vs ${target}`);
   }
 });
+
+// ---- playability: the map must let the level be won and lost ----
+// Tanks are blocked by brick, steel, water and the base; shells only by steel
+// (game-design §1 matrix). Brick counts as a wall here even though it can be
+// shot away: a map should not depend on enemies tunnelling to reach anyone.
+
+const TANK_BLOCKING = ["B", "S", "W", "E"];
+const cellsOf = (map, glyphs) => {
+  const out = [];
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) if (glyphs.includes(map[r][c])) out.push([r, c]);
+  }
+  return out;
+};
+// Where enemies enter: the three NES spawn slots (top-left, top-center,
+// top-right), every spawn digit the map places, and the sniper posts.
+const enemyEntries = (map) => [[0, 0], [0, (GRID - 1) / 2], [0, GRID - 1], ...cellsOf(map, ["1", "2", "3", "N"])];
+const drivable = (map, [r, c]) => r >= 0 && r < GRID && c >= 0 && c < GRID && !TANK_BLOCKING.includes(map[r][c]);
+const STEPS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+/** Every tile a tank starting at `from` can drive to, as "r,c" keys. */
+function reachableFrom(map, from) {
+  const seen = new Set([from.join()]);
+  const queue = [from];
+  while (queue.length > 0) {
+    const [r, c] = queue.shift();
+    for (const [dr, dc] of STEPS) {
+      const next = [r + dr, c + dc];
+      if (drivable(map, next) && !seen.has(next.join())) {
+        seen.add(next.join());
+        queue.push(next);
+      }
+    }
+  }
+  return seen;
+}
+
+// Each check returns the problem with one level's map, or null.
+const PLAYABILITY = {
+  "every enemy entry and sniper post can drive to the player spawn": (map) => {
+    const [player] = cellsOf(map, ["P"]);
+    const stuck = enemyEntries(map).filter((entry) => !drivable(map, entry) || !reachableFrom(map, entry).has(player.join()));
+    return stuck.length > 0 ? `entries ${JSON.stringify(stuck)} cannot reach P` : null;
+  },
+  "an enemy can stand somewhere with a steel-free line of fire to the base": (map) => {
+    const [base] = cellsOf(map, ["E"]);
+    const reachable = reachableFrom(map, enemyEntries(map)[0]);
+    for (const [dr, dc] of STEPS) {
+      for (let r = base[0] + dr, c = base[1] + dc; r >= 0 && r < GRID && c >= 0 && c < GRID; r += dr, c += dc) {
+        if (map[r][c] === "S") break;
+        if (reachable.has(`${r},${c}`)) return null;
+      }
+    }
+    return "no tile an enemy can reach has a steel-free line of fire to the base";
+  },
+  "the base's own cover is never steel": (map) => {
+    const [[r, c]] = cellsOf(map, ["E"]);
+    const steel = STEPS.filter(([dr, dc]) => map[r + dr]?.[c + dc] === "S");
+    return steel.length > 0 ? `steel next to the base at ${JSON.stringify(steel)}` : null;
+  },
+  "no row is solid wall from edge to edge": (map) => {
+    const solid = [...map.keys()].filter((r) => [...map[r]].every((ch) => TANK_BLOCKING.includes(ch)));
+    return solid.length > 0 ? `solid rows ${solid}` : null;
+  },
+  "terrain is left-right mirror symmetric (markers excepted)": (map) => {
+    const terrain = (ch) => (TANK_BLOCKING.includes(ch) ? ch : ".");
+    const off = [...map.keys()].filter((r) => [...map[r]].some((ch, c) => terrain(ch) !== terrain(map[r][GRID - 1 - c])));
+    return off.length > 0 ? `asymmetric rows ${off}` : null;
+  },
+};
+
+for (const [rule, check] of Object.entries(PLAYABILITY)) {
+  test(`every level: ${rule}`, () => {
+    const failures = levels.map((level) => [level.id, check(level.map)]).filter(([, problem]) => problem);
+    assert.deepEqual(failures, []);
+  });
+}
 
 test("loadLevels returns frozen copies and leaves the modules untouched", () => {
   const [loaded] = loadLevels([level01]);
