@@ -147,10 +147,10 @@ Item {
     return false
   }
 
-  // Sound is optional. Audio.qml is the only file that imports QtMultimedia,
-  // so where that module is missing this Loader ends in Error, audio.item
-  // stays null, and the game runs silent. Closing or faulting destroys every
-  // voice and the music with it (docs/audio-architecture.md).
+  // Sound is optional. Every voice is a pw-play child process owned by
+  // Audio.qml, and where voices cannot play the game runs silent. Closing or
+  // faulting destroys every voice and kills its process
+  // (docs/audio-architecture.md).
   Loader {
     id: audio
     active: root.opened && !root.faulted

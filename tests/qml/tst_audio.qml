@@ -1,35 +1,42 @@
 import QtQuick
-import QtMultimedia
 import QtTest
 import "../../src"
 import "../../src/audio/cues.mjs" as Cues
 import "../../src/core/constants.mjs" as Constants
 import "../../src/core/engine.mjs" as Engine
 import "../../src/levels/index.mjs" as Levels
+import "voices.mjs" as Voices
 
 // Audio.qml as Overlay.qml mounts it: behind a Loader, fed after every
 // Engine.step. Overlay.qml imports Quickshell, which does not load here, so
 // this file repeats its wiring (sound() and onTick) next to the real Engine
-// and GameLoop. Voices are muted so the suite stays quiet on a desktop.
+// and GameLoop. Voices are FakeVoice.qml, because AudioVoice.qml needs
+// Quickshell.Io; tests/quickshell/tst_close_cycle.qml runs the real one.
 TestCase {
   id: testCase
   name: "Audio"
   when: windowShown
 
+  readonly property url fakeVoice: Qt.resolvedUrl("FakeVoice.qml")
   property var game: null
   property var input: ({ dir: null, fire: false, start: false, pause: false })
   property int shotSteps: 0
   property int shotCues: 0
+  property bool opened: false
 
   Loader {
     id: audio
-    source: "../../src/Audio.qml"
-    onLoaded: item.muted = true
+    Component.onCompleted: setSource(Qt.resolvedUrl("../../src/Audio.qml"), { voiceSource: testCase.fakeVoice })
   }
 
   Loader {
     id: broken
-    onLoaded: item.muted = true
+  }
+
+  // Mounted the way Overlay.qml mounts it: active follows the overlay.
+  Loader {
+    id: cycled
+    active: testCase.opened
   }
 
   Connections {
@@ -63,25 +70,22 @@ TestCase {
     return JSON.stringify(Array.prototype.slice.call(list).sort())
   }
 
-  function test_every_cue_and_track_has_a_file_that_loads() {
+  // tests/audio.test.mjs checks that each of these files exists.
+  function test_every_cue_and_track_has_voices_on_its_file() {
     compare(audio.status, Loader.Ready)
     compare(sorted(Object.keys(audio.item.poolSizes)), sorted(Cues.CUE_IDS))
     compare(sorted(audio.item.trackIds), sorted(Cues.TRACK_IDS))
-    tryVerify(function() {
-      for (var cue in audio.item.pools) {
-        var voices = audio.item.pools[cue].voices
-        for (var i = 0; i < voices.length; i++)
-          if (voices[i].status !== SoundEffect.Ready) return false
+    for (var cue in audio.item.poolSizes) {
+      var voices = audio.item.pools[cue].voices
+      compare(voices.length, audio.item.poolSizes[cue], cue)
+      for (var i = 0; i < voices.length; i++) {
+        verify(voices[i].file.endsWith("/assets/audio/sfx/" + cue + ".wav"), voices[i].file)
+        verify(voices[i].file.indexOf("file:") !== 0, "pw-play takes a path, not a URL")
+        compare(voices[i].volume, audio.item.effectsVolume)
       }
-      return true
-    }, 5000, "every voice reaches Ready")
-    for (var t = 0; t < Cues.TRACK_IDS.length; t++) {
-      audio.item.setMusic({ track: Cues.TRACK_IDS[t], playing: true })
-      tryVerify(function() {
-        var status = audio.item.player.mediaStatus
-        return status === MediaPlayer.LoadedMedia || status === MediaPlayer.BufferedMedia
-      }, 5000, Cues.TRACK_IDS[t] + " loads")
     }
+    verify(audio.item.player.loops)
+    compare(audio.item.player.volume, audio.item.musicVolume)
   }
 
   // step() clears events, and a catch-up frame runs up to 5 steps. Draining
@@ -108,24 +112,26 @@ TestCase {
   function test_music_follows_phase_and_pause_holds_it() {
     var a = audio.item
     a.setMusic(Cues.musicFor("title"))
-    verify(String(a.player.source).endsWith("/music/title.ogg"))
-    tryCompare(a.player, "playbackState", MediaPlayer.PlayingState)
+    verify(a.player.file.endsWith("/music/title.ogg"))
+    verify(a.player.running && !a.player.held)
 
     a.setMusic(Cues.musicFor("playing"))
-    verify(String(a.player.source).endsWith("/music/battle.ogg"))
-    tryCompare(a.player, "playbackState", MediaPlayer.PlayingState)
+    verify(a.player.file.endsWith("/music/battle.ogg"))
+    verify(a.player.running && !a.player.held)
+    var plays = a.player.plays
 
     a.setMusic(Cues.musicFor("paused"))
-    tryCompare(a.player, "playbackState", MediaPlayer.PausedState)
-    verify(String(a.player.source).endsWith("/music/battle.ogg"))
+    verify(a.player.held, "pause holds the tune")
+    verify(a.player.file.endsWith("/music/battle.ogg"))
 
     a.setMusic(Cues.musicFor("playing"))
-    tryCompare(a.player, "playbackState", MediaPlayer.PlayingState)
+    verify(a.player.running && !a.player.held)
+    compare(a.player.plays, plays, "resume continues the tune, not a restart")
     a.setMusic(Cues.musicFor("playing"))
-    compare(a.player.playbackState, MediaPlayer.PlayingState)
+    compare(a.player.plays, plays)
 
     a.setMusic(Cues.musicFor("gameOver"))
-    tryCompare(a.player, "playbackState", MediaPlayer.StoppedState)
+    verify(!a.player.running)
     compare(a.music.track, null)
   }
 
@@ -134,22 +140,63 @@ TestCase {
     compare(testCase.shotCues, 1)
     audio.item.setMusic({ track: "bogus", playing: true })
     compare(audio.item.music.track, null)
-    compare(audio.item.player.playbackState, MediaPlayer.StoppedState)
+    verify(!audio.item.player.running)
   }
 
-  function test_missing_files_neither_throw_nor_fault() {
+  function test_a_failing_voice_warns_once_and_never_throws() {
     broken.setSource(Qt.resolvedUrl("../../src/Audio.qml"), {
+      voiceSource: testCase.fakeVoice,
       sfxDir: "file:///nonexistent/battletank/",
       musicDir: "file:///nonexistent/battletank/"
     })
     compare(broken.status, Loader.Ready)
-    tryVerify(function() {
-      return broken.item.pools["shot"].voices[0].status === SoundEffect.Error
-    }, 5000, "a missing file leaves its voice in Error")
+    var voice = broken.item.pools["shot"].voices[0]
+    verify(voice.file.indexOf("/nonexistent/battletank/shot.wav") === 0, voice.file)
+    voice.failed("cannot play " + voice.file)
+    voice.failed("cannot play " + voice.file)
+    compare(Object.keys(broken.item.warned).length, 1)
     broken.item.playCues(["shot", "hit", "game-over"])
     broken.item.setMusic({ track: "battle", playing: true })
-    wait(100)
     verify(broken.item !== null)
     broken.source = ""
+  }
+
+  // Where voices cannot be made at all (AudioVoice.qml failing to load, as
+  // it does here without Quickshell.Io), the game still runs, silent.
+  function test_no_voices_means_silence_never_a_throw() {
+    ignoreWarning(new RegExp("cannot load .*AudioVoice\\.qml"))
+    broken.source = Qt.resolvedUrl("../../src/Audio.qml")
+    compare(broken.status, Loader.Ready)
+    compare(broken.item.player, null)
+    var cues = 0
+    broken.item.played.connect(function() { cues++ })
+    broken.item.playCues(["shot", "game-over"])
+    broken.item.setMusic({ track: "title", playing: true })
+    compare(cues, 0)
+    compare(broken.item.music.track, "title")
+    broken.source = ""
+  }
+
+  // The user's hang: open with sound, close, five times. Every voice must
+  // die with the Loader, so nothing that plays sound outlives the overlay.
+  function test_closing_the_overlay_destroys_every_voice() {
+    var before = Voices.live.count
+    cycled.setSource(Qt.resolvedUrl("../../src/Audio.qml"), { voiceSource: testCase.fakeVoice })
+    cycled.active = Qt.binding(function() { return testCase.opened })
+    for (var i = 0; i < 5; i++) {
+      testCase.opened = true
+      tryVerify(function() { return cycled.item !== null }, 1000, "cycle " + i + " opens")
+      compare(cycled.item.voiceSource, testCase.fakeVoice, "reopening keeps the voice")
+      cycled.item.setMusic(Cues.musicFor("title"))
+      if (i === 2) cycled.item.setMusic({ track: "title", playing: false })
+      cycled.item.playCues(["shot", "hit", "brick"])
+      verify(cycled.item.player.running, "cycle " + i + " music")
+      compare(cycled.item.player.held, i === 2, "cycle " + i + " held")
+      compare(Voices.live.count - before, 17, "cycle " + i + ": 16 effect voices and the music")
+      testCase.opened = false
+      compare(cycled.item, null)
+      tryCompare(Voices.live, "count", before, 1000, "cycle " + i + ": no voice outlives the close")
+    }
+    cycled.source = ""
   }
 }

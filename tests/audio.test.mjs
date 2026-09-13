@@ -3,6 +3,7 @@
 // pins the three GameEvent kinds item (a) added to engine.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   CUE_IDS,
   EVENT_CUES,
@@ -50,6 +51,14 @@ test("every GameEvent kind has one cue, and every cue has a kind", () => {
 
 test("cue and track ids are kebab-case file stems", () => {
   for (const id of [...CUE_IDS, ...TRACK_IDS]) assert.match(id, /^[a-z]+(-[a-z]+)*$/);
+});
+
+// pw-play decodes these through libsndfile. The QML suite cannot play them:
+// its voices are fakes (tests/qml/FakeVoice.qml).
+test("every cue and track has its file: a WAV cue, an Ogg track", () => {
+  const head = (path) => readFileSync(new URL(path, import.meta.url)).subarray(0, 12).toString("latin1");
+  for (const cue of CUE_IDS) assert.match(head(`../assets/audio/sfx/${cue}.wav`), /^RIFF....WAVE$/s, cue);
+  for (const track of TRACK_IDS) assert.match(head(`../assets/audio/music/${track}.ogg`), /^OggS/, track);
 });
 
 test("supersession names only known cues", () => {
