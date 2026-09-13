@@ -1,6 +1,6 @@
 // Pins the core interface (docs/architecture.md, "Boundary"). The first group
-// passes against the stubs. The `todo` group is the engineer's acceptance bar:
-// implement until those pass, then delete their `todo` option.
+// passes against the stubs; the rest were the engineer's acceptance bar for
+// implementing engine.mjs, now closed.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createGame, emptyInput, step } from "../src/core/engine.mjs";
@@ -36,7 +36,6 @@ test("terrain table covers exactly the glyphs GameState.tiles may hold", () => {
 
 // ---- acceptance cases for the engineer's implementation ----
 
-const TODO = "engine not implemented yet (docs/architecture.md)";
 
 const fixture = (rows) => ({
   id: 1,
@@ -76,28 +75,28 @@ const intoPlaying = (state) => {
   return state;
 };
 
-test("createGame starts a run on the title screen", { todo: TODO }, () => {
+test("createGame starts a run on the title screen", () => {
   const state = createGame(levels);
   assert.equal(state.phase, "title");
   assert.equal(state.lives, PLAYER.lives);
   assert.equal(state.levelIndex, 0);
 });
 
-test("createGame rejects malformed levels", { todo: TODO }, () => {
+test("createGame rejects malformed levels", () => {
   assert.throws(() => createGame([{ id: 1 }]), /invalid levels/);
 });
 
-test("GameState is plain data", { todo: TODO }, () => {
+test("GameState is plain data", () => {
   const state = intoPlaying(createGame([OPEN]));
   assert.deepEqual(JSON.parse(JSON.stringify(state)), state);
 });
 
-test("step is deterministic for a seed and an input sequence", { todo: TODO }, () => {
+test("step is deterministic for a seed and an input sequence", () => {
   const play = () => run(intoPlaying(createGame(levels, { seed: 7 })), { dir: "left", fire: true }, 300);
   assert.deepEqual(play(), play());
 });
 
-test("Start leads through levelStart into playing", { todo: TODO }, () => {
+test("Start leads through levelStart into playing", () => {
   const state = createGame([OPEN]);
   run(state, { start: true }, 1);
   assert.equal(state.phase, "levelStart");
@@ -105,7 +104,7 @@ test("Start leads through levelStart into playing", { todo: TODO }, () => {
   assert.equal(state.phase, "playing");
 });
 
-test("the player covers 60 px in 60 ticks on open ground", { todo: TODO }, () => {
+test("the player covers 60 px in 60 ticks on open ground", () => {
   const state = intoPlaying(createGame([OPEN]));
   const x0 = state.player.x;
   run(state, { dir: "right" }, 60);
@@ -113,7 +112,7 @@ test("the player covers 60 px in 60 ticks on open ground", { todo: TODO }, () =>
   assert.equal(state.player.y, 6 * TILE);
 });
 
-test("a player shell destroys the brick it hits", { todo: TODO }, () => {
+test("a player shell destroys the brick it hits", () => {
   const state = intoPlaying(createGame([OPEN]));
   assert.equal(state.player.dir, "up");
   run(state, { fire: true }, 1);

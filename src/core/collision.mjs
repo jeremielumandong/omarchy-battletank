@@ -2,7 +2,7 @@
 // shells use axis-aligned boxes. Four-direction movement with axis snapping
 // (game-design §1) keeps every tank TILE-aligned on at least one axis, so a
 // tank's box overlaps at most two tiles and a grid lookup is exact.
-import { Glyph } from "./constants.mjs";
+import { GRID, Glyph, TILE } from "./constants.mjs";
 
 /**
  * The terrain half of the game-design §1 collision matrix, as data. Only these
@@ -21,35 +21,42 @@ export const TERRAIN = Object.freeze({
 /** @typedef {{ x: number, y: number, w: number, h: number }} Rect  px, playfield coords, top-left origin */
 
 /**
- * STUB: engineer implements. True when two boxes overlap by more than an edge.
+ * True when two boxes overlap by more than an edge.
  * @param {Rect} a
  * @param {Rect} b
  * @returns {boolean}
  */
 export function overlaps(a, b) {
-  throw new Error("STUB: collision.overlaps not implemented");
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
 /**
- * STUB: engineer implements. Glyph at tile (col, row), or null outside the
- * playfield. Callers treat null as solid: the field edge blocks tanks and
- * removes shells.
+ * Glyph at tile (col, row), or null outside the playfield. Callers treat null
+ * as solid: the field edge blocks tanks and removes shells.
  * @param {string[]} tiles  GameState.tiles, row-major, GRID × GRID
  * @param {number} col
  * @param {number} row
  * @returns {string|null}
  */
 export function tileAt(tiles, col, row) {
-  throw new Error("STUB: collision.tileAt not implemented");
+  if (col < 0 || col >= GRID || row < 0 || row >= GRID) return null;
+  return tiles[row * GRID + col];
 }
 
 /**
- * STUB: engineer implements. Every tile (col, row) that `rect` overlaps, in
- * row-major order. That is at most 2 tiles for an aligned tank and at most 4
- * for a shell.
+ * Every tile (col, row) that `rect` overlaps, in row-major order. That is at
+ * most 2 tiles for an aligned tank and at most 4 for a shell.
  * @param {Rect} rect
  * @returns {{ col: number, row: number }[]}
  */
 export function tilesUnder(rect) {
-  throw new Error("STUB: collision.tilesUnder not implemented");
+  const colStart = Math.floor(rect.x / TILE);
+  const colEnd = Math.floor((rect.x + rect.w - 1) / TILE);
+  const rowStart = Math.floor(rect.y / TILE);
+  const rowEnd = Math.floor((rect.y + rect.h - 1) / TILE);
+  const out = [];
+  for (let row = rowStart; row <= rowEnd; row++) {
+    for (let col = colStart; col <= colEnd; col++) out.push({ col, row });
+  }
+  return out;
 }
