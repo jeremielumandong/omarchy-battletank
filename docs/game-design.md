@@ -19,6 +19,12 @@ here is inherited convention — this doc *is* the convention going forward.
   collision and enemy pathing simple to reason about.
 - One player tank, one **Base** (see below), a mix of destructible/
   indestructible terrain, and a level-defined roster of enemy tanks.
+- Enemies enter at three fixed spawn slots, as in NES Battle City: the
+  top-left, top-center and top-right tiles, taken in turn (left, center,
+  right) as the roster spawns. A slot a tank stands on is skipped; with all
+  three occupied the next enemy waits. A Sniper with a free sniper post
+  starts on the post instead. The spawn digits in level maps no longer place
+  anything.
 
 ### Movement & rotation
 

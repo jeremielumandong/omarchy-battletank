@@ -15,8 +15,19 @@ export const HUD_HEIGHT = 16; // single top strip (game-design §5)
 export const SCREEN_W = FIELD;
 export const SCREEN_H = HUD_HEIGHT + FIELD;
 
+// NES Battle City's three enemy entry points: the top-left, top-center and
+// top-right tiles, in the order a level's enemies take them. The engine skips
+// a slot a tank is standing on (engine.mjs spawnEnemy).
+export const ENEMY_SPAWN_SLOTS = Object.freeze([
+  Object.freeze({ x: 0, y: 0 }),
+  Object.freeze({ x: Math.floor(GRID / 2) * TILE, y: 0 }),
+  Object.freeze({ x: (GRID - 1) * TILE, y: 0 }),
+]);
+
 // Level map glyphs. Markers (P, N, 1-3) say where things start; createGame()
 // turns them into EMPTY terrain, so only B/S/W/E ever reach GameState.tiles.
+// The enemy-spawn digits 1-3 no longer place anything, since every enemy
+// enters at ENEMY_SPAWN_SLOTS, but the level format still accepts them.
 export const Glyph = Object.freeze({
   EMPTY: ".",
   BRICK: "B",
