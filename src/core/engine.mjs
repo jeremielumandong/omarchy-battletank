@@ -79,7 +79,7 @@ import { overlaps, tileAt, tilesUnder, TERRAIN } from "./collision.mjs";
  * sound. Cleared at the start of every step().
  *
  * @typedef {Object} GameEvent
- * @property {"shot" | "explosion" | "tileDestroyed" | "baseHit" | "tankLost" | "levelClear"} kind
+ * @property {"shot" | "explosion" | "tileDestroyed" | "baseHit" | "tankLost" | "levelClear" | "enemyDestroyed" | "gameOver" | "complete"} kind
  * @property {number} x
  * @property {number} y
  */
@@ -192,11 +192,14 @@ export function step(state, input) {
     case "levelClear":
       if (state.phaseTicks >= PHASE_TICKS.levelClear) {
         if (state.levelIndex + 1 < state.levels.length) enterLevelStart(state, state.levelIndex + 1);
-        else enterPhase(state, "complete");
+        else {
+          state.events.push({ kind: "complete", x: 0, y: 0 });
+          enterPhase(state, "complete");
+        }
       }
       break;
     case "baseDestroyed":
-      if (state.phaseTicks >= PHASE_TICKS.baseDestroyed) enterPhase(state, "gameOver");
+      if (state.phaseTicks >= PHASE_TICKS.baseDestroyed) enterGameOver(state);
       break;
     case "gameOver":
       if (edge.start) beginNewRun(state);
@@ -216,6 +219,12 @@ export function step(state, input) {
 function enterPhase(state, phase) {
   state.phase = phase;
   state.phaseTicks = 0;
+}
+
+/** Game Over is reached two ways (last life, destroyed base); both announce it once. */
+function enterGameOver(state) {
+  state.events.push({ kind: "gameOver", x: 0, y: 0 });
+  enterPhase(state, "gameOver");
 }
 
 function beginNewRun(state) {
@@ -481,7 +490,7 @@ function destroyTank(state, tank) {
   if (tank.kind === "player") {
     state.player = null;
     state.lives--;
-    if (state.lives <= 0) enterPhase(state, "gameOver");
+    if (state.lives <= 0) enterGameOver(state);
     else {
       state.respawnTicks = PLAYER.respawnDelay;
       state.events.push({ kind: "tankLost", x: tank.x, y: tank.y });
@@ -490,6 +499,7 @@ function destroyTank(state, tank) {
   }
   tank.hitsLeft--;
   if (tank.hitsLeft <= 0) {
+    state.events.push({ kind: "enemyDestroyed", x: tank.x, y: tank.y });
     state.enemies = state.enemies.filter((e) => e.id !== tank.id);
     state.destroyed++;
   }

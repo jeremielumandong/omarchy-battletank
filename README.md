@@ -42,3 +42,11 @@ scripts/check.sh   # plugin contract, node --test, headless qmltestrunner
 This needs Node 22 or newer and Qt 6 (`/usr/lib/qt6/bin/qmltestrunner`). Game
 logic lives in `src/core/` as plain ES modules, and every change there must
 pass both the Node and the QML suites.
+
+Sound: `src/audio/cues.mjs` decides which event plays which cue and which
+phase plays which music. `src/Audio.qml` plays them from
+`assets/audio/sfx/<cue>.wav` and `assets/audio/music/<track>.ogg`, each through
+a `pw-play` child process (`src/AudioVoice.qml`). QtMultimedia is banned from
+`src/`, because inside the shell it wedged omarchy-shell. A running
+shell caches the plugin's modules, so changed code or sounds, including after
+`omarchy plugin update`, arrive only with the next `omarchy restart shell`.

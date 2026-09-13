@@ -147,8 +147,13 @@ src/GameLoop.qml         fixed-timestep driver
 src/core/                plain ES modules: constants, rng, levels (validator), collision, engine
 src/levels/              index.mjs (order) + 01.mjs … 10.mjs (data)
 src/render/draw.mjs      state → Canvas 2D
+src/audio/cues.mjs       GameEvent → cue id, phase → music track (docs/audio-architecture.md)
+src/Audio.qml            voice pools and music, mounted by a Loader in Overlay.qml
+src/AudioVoice.qml       one pw-play child process per voice (no QtMultimedia in the shell)
+assets/audio/            sfx/<cue>.wav, music/<track>.ogg
 tests/*.test.mjs         node --test: level format, core interface + acceptance cases
-tests/qml/               qmltestrunner: loop timing, QML import of core
+tests/qml/               qmltestrunner: loop timing, QML import of core, audio wiring
+tests/quickshell/        real quickshell: no voice outlives five overlay closes
 scripts/check.sh         every check above, headless
 ```
 
