@@ -13,6 +13,7 @@
 //   world every tick buys nothing a test cannot get from structuredClone().
 //
 import {
+  ENEMY_SPAWN_SLOTS,
   ENEMY_TYPES,
   FIELD,
   GRID,
@@ -143,13 +144,13 @@ export function createGame(levels, options = {}) {
     prevInput: emptyInput(),
     events: [],
     // Not in the typedef, but plain data and load-bearing for spawning and
-    // ids: the base tile, the level's spawn points, and a monotonic id
-    // counter. Kept on GameState so a run never depends on wall-clock or
-    // module-level mutable state (determinism, architecture.md "Boundary").
+    // ids: the base tile, the level's player spawn and sniper posts, the next
+    // ENEMY_SPAWN_SLOTS index, and a monotonic id counter. Kept on GameState
+    // so a run never depends on wall-clock or module-level mutable state
+    // (determinism, architecture.md "Boundary").
     nextId: 1,
     basePos: null,
     playerSpawn: null,
-    enemySpawns: [],
     availableSniperPosts: [],
     spawnCursor: 0,
   };
@@ -232,7 +233,6 @@ function enterLevelStart(state, levelIndex) {
   state.tiles = parsed.tiles;
   state.basePos = parsed.basePos;
   state.playerSpawn = parsed.playerSpawn;
-  state.enemySpawns = parsed.enemySpawns;
   state.availableSniperPosts = parsed.sniperPosts;
   state.spawnCursor = 0;
   state.player = makePlayerTank(state, parsed.playerSpawn);
@@ -277,23 +277,20 @@ function parseLevel(level) {
   const tiles = new Array(GRID * GRID).fill(Glyph.EMPTY);
   let playerSpawn = null;
   let basePos = null;
-  const enemySpawns = [];
   const sniperPosts = [];
   for (let row = 0; row < GRID; row++) {
     const line = level.map[row];
     for (let col = 0; col < GRID; col++) {
       const ch = line[col];
-      const spawnIndex = SPAWN_GLYPHS.indexOf(ch);
       if (ch === Glyph.PLAYER) playerSpawn = { x: col * TILE, y: row * TILE };
       else if (ch === Glyph.SNIPER_POST) sniperPosts.push({ x: col * TILE, y: row * TILE });
-      else if (spawnIndex >= 0) enemySpawns[spawnIndex] = { x: col * TILE, y: row * TILE };
-      else {
+      else if (!SPAWN_GLYPHS.includes(ch)) {
         tiles[row * GRID + col] = ch;
         if (ch === Glyph.BASE) basePos = { x: col * TILE, y: row * TILE };
       }
     }
   }
-  return { tiles, playerSpawn, basePos, enemySpawns, sniperPosts };
+  return { tiles, playerSpawn, basePos, sniperPosts };
 }
 
 /** One wave's enemy types, spawn order preserved. No flatMap: Qt 6.11 lacks it (tst_core_import.qml). */
@@ -637,15 +634,27 @@ function stepEnemy(state, enemy, level) {
 
 // ---- spawning and waves ----
 
-function spawnEnemyAt(state, type) {
-  let pos;
+/**
+ * Puts a `type` enemy on the field and returns whether it could. A sniper
+ * takes a free sniper post. Every other enemy takes the next of the three
+ * ENEMY_SPAWN_SLOTS in rotation, skipping any slot a tank stands on; with all
+ * three occupied it returns false and the spawn waits.
+ */
+function spawnEnemy(state, type) {
   if (type === "sniper" && state.availableSniperPosts.length > 0) {
-    pos = state.availableSniperPosts.shift();
-  } else {
-    pos = state.enemySpawns[state.spawnCursor % state.enemySpawns.length];
-    state.spawnCursor++;
+    state.enemies.push(makeEnemyTank(state, type, state.availableSniperPosts.shift()));
+    return true;
   }
-  state.enemies.push(makeEnemyTank(state, type, pos));
+  const tanks = allTanks(state);
+  for (let i = 0; i < ENEMY_SPAWN_SLOTS.length; i++) {
+    const cursor = (state.spawnCursor + i) % ENEMY_SPAWN_SLOTS.length;
+    const slot = ENEMY_SPAWN_SLOTS[cursor];
+    if (tanks.some((tank) => overlaps(tankRect(slot), tankRect(tank)))) continue;
+    state.spawnCursor = (cursor + 1) % ENEMY_SPAWN_SLOTS.length;
+    state.enemies.push(makeEnemyTank(state, type, slot));
+    return true;
+  }
+  return false;
 }
 
 function stepSpawning(state) {
@@ -654,13 +663,12 @@ function stepSpawning(state) {
     return;
   }
   const level = state.levels[state.levelIndex];
-  const type = state.spawnQueue.shift();
-  spawnEnemyAt(state, type);
+  const type = state.spawnQueue[0];
+  if (!spawnEnemy(state, type)) return;
+  state.spawnQueue.shift();
   // Hunters spawn and advance in pairs from level 7 on (game-design §2/§3).
-  if (type === "hunter" && level.rules && level.rules.hunterPairs && state.spawnQueue[0] === "hunter") {
-    state.spawnQueue.shift();
-    spawnEnemyAt(state, "hunter");
-  }
+  const pair = type === "hunter" && level.rules && level.rules.hunterPairs && state.spawnQueue[0] === "hunter";
+  if (pair && spawnEnemy(state, "hunter")) state.spawnQueue.shift();
   state.spawnTicks = SPAWN_INTERVAL;
 }
 
