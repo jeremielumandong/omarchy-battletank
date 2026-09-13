@@ -7,9 +7,18 @@
   "license": "MIT",
   "description": "NES-style top-down tank battle: 10 levels, neon graphics. Launch with: omarchy-shell shell toggle arkane.battletank '{}'",
   "kinds": [
-    "overlay"
+    "overlay",
+    "bar-widget"
   ],
   "entryPoints": {
-    "overlay": "src/Overlay.qml"
+    "overlay": "src/Overlay.qml",
+    "barWidget": "src/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Battletank",
+    "description": "NES-style top-down tank battle",
+    "category": "Games",
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }

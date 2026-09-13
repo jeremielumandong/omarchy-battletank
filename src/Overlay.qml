@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Effects
+import "audio/cues.mjs" as Cues
 import "core/constants.mjs" as Constants
 import "core/engine.mjs" as Engine
 import "levels/index.mjs" as Levels
@@ -31,6 +32,7 @@ Item {
   property var game: null
   property bool faulted: false
   property string faultText: ""
+  property bool soundFailed: false
 
   // Held input. heldDirs is a stack, so the most recent direction wins.
   property var heldDirs: []
@@ -122,6 +124,30 @@ Item {
     return false
   }
 
+  // Sound is optional. Every voice is a pw-play child process owned by
+  // Audio.qml, and where voices cannot play the game runs silent. Closing or
+  // faulting destroys every voice and kills its process
+  // (docs/audio-architecture.md).
+  Loader {
+    id: audio
+    active: root.opened && !root.faulted
+    source: "Audio.qml"
+  }
+
+  // Runs after every step, not once per frame: step() clears events, and a
+  // catch-up frame runs several steps. A sound error warns once and never
+  // reaches fail(): the game plays on without it.
+  function sound(game) {
+    if (!audio.item) return
+    try {
+      audio.item.playCues(Cues.cuesFor(game.events))
+      audio.item.setMusic(Cues.musicFor(game.phase))
+    } catch (e) {
+      if (!root.soundFailed) console.warn("arkane.battletank: sound:", String((e && e.message) || e))
+      root.soundFailed = true
+    }
+  }
+
   PanelWindow {
     id: panel
     visible: root.opened
@@ -196,7 +222,9 @@ Item {
           Engine.step(root.game, root.currentInput())
         } catch (e) {
           root.fail(e)
+          return
         }
+        root.sound(root.game)
       }
       onTicked: screen.requestPaint()
     }

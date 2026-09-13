@@ -45,15 +45,18 @@ export function tileAt(tiles, col, row) {
 
 /**
  * Every tile (col, row) that `rect` overlaps, in row-major order. That is at
- * most 2 tiles for an aligned tank and at most 4 for a shell.
+ * most 2 tiles for an aligned tank and at most 4 for a shell. Positions are
+ * fractional (enemy speeds are), so the far edge is exclusive: a box ending
+ * exactly on a tile line does not touch the next tile, one ending 0.1 px past
+ * it does.
  * @param {Rect} rect
  * @returns {{ col: number, row: number }[]}
  */
 export function tilesUnder(rect) {
   const colStart = Math.floor(rect.x / TILE);
-  const colEnd = Math.floor((rect.x + rect.w - 1) / TILE);
+  const colEnd = Math.ceil((rect.x + rect.w) / TILE) - 1;
   const rowStart = Math.floor(rect.y / TILE);
-  const rowEnd = Math.floor((rect.y + rect.h - 1) / TILE);
+  const rowEnd = Math.ceil((rect.y + rect.h) / TILE) - 1;
   const out = [];
   for (let row = rowStart; row <= rowEnd; row++) {
     for (let col = colStart; col <= colEnd; col++) out.push({ col, row });
