@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stands in for pw-play in tst_close_cycle.qml, so the check makes no sound.
+# Like pw-play, it fails with 1 on a file it cannot open. Otherwise it holds
+# the stream until it is killed, so a voice that outlives its overlay shows
+# up as a live child.
+for file; do :; done
+[ -r "$file" ] || exit 1
+exec sleep 60

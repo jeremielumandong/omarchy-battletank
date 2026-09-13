@@ -17,12 +17,17 @@ Game rules stay in [`architecture.md`](architecture.md) and
 
 ## Decision
 
-Play audio **in-process with QtMultimedia**:
-- `SoundEffect` voices, one small pool per cue, play the effects.
-- One `MediaPlayer` with `loops: MediaPlayer.Infinite` plays the music.
+Play audio **out of process, with `pw-play`** (revised 2026-09-13, see
+"Why not in-process QtMultimedia" below):
+- Each voice is a `Quickshell.Io` `Process` running
+  `pw-play --volume V --media-role Game <file>` (`src/AudioVoice.qml`).
+- Effects get one small pool of voices per cue, round-robin.
+- One looping voice plays the music. It starts again when the file ends, and
+  pause holds it with `SIGSTOP` and resumes it with `SIGCONT`.
 
 All of it lives in `src/Audio.qml`, which `Overlay.qml` mounts through a
-`Loader`. The core never sees any of it:
+`Loader`. Destroying a `Process` SIGKILLs its child, so unloading the
+overlay silences every voice. The core never sees any of it:
 - It already reports what happened in `GameState.events`, "for effects and
   sound" (`src/core/engine.mjs:78-86`).
 - The plain module `src/audio/cues.mjs` maps those events to cue ids and each
@@ -33,28 +38,47 @@ This is the rendering pattern again. `draw.mjs` reads state and paints.
 `cues.mjs` reads state and names sounds.
 
 **Rejected**
-- **`Quickshell.Io` `Process` running `pw-play` or `mpv`.** That is one process
-  per shot. Music started this way can outlive the overlay's unload
-  (architecture.md "No `keepLoaded`"). `Quickshell.Io` does not load under
-  `qmltestrunner`, so none of it could be tested headless. `mpv` is not an
-  omarchy dependency.
+- **In-process QtMultimedia** (`SoundEffect` pools and a `MediaPlayer`, the
+  first build). It wedged the shared shell. See below.
+- **`mpv`.** It is not an omarchy dependency.
 - **QML diffing `phase` to decide what to play.** It moves game knowledge into
   QML, against `Overlay.qml:20`. It also misses a transition that starts and
   ends inside one multi-tick frame.
 
-**Why this mechanism holds on this stack** (probed 2026-09-13, Qt 6.11.2,
-quickshell 0.3.1):
+**Why not in-process QtMultimedia.** The first build played through
+QtMultimedia inside omarchy-shell. Twelve seconds into a live game, the
+shell's main thread started spinning on "QSocketNotifier: Invalid socket …
+disabling" and stopped responding, so the game could not be closed. That code
+is Qt Multimedia 6.11.2's PipeWire backend, not ours, and the same wedge is
+reported upstream for another omarchy plugin that uses `SoundEffect`. After
+the first open, QtMultimedia keeps a process-global PipeWire client in the
+shell for the rest of its life, so no `Audio.qml` teardown order can contain
+it. The evidence is in the 2026-09-13 project lesson on this hang. The
+exact trigger is still `unproven`: a private-PipeWire repro did not spin.
+`check.sh` now rejects any `import QtMultimedia` under `src/`.
+
+The old objections to `Process` no longer hold:
+- **Outliving the overlay:** `~Process()` kills its child, and
+  `tests/quickshell/tst_close_cycle.qml` proves no voice outlives a close.
+- **Testing:** the QML suite injects `tests/qml/FakeVoice.qml`, and
+  `check.sh` runs the real voice in the real `quickshell` binary.
+- **Cost:** a 0.12 s shot ran from spawn to exit in 0.14 s. Each `play()` call
+  forks a fresh `pw-play` child; the measured ~20ms overhead is small. With a
+  4-voice pool, up to 4 shots run concurrently instead of serially, so the fork
+  cost is distributed across parallel execution rather than blocking one voice
+  at a time. This closes the audible-lag risk.
+
+**Why this mechanism holds on this stack** (probed 2026-09-13, quickshell
+0.3.1, pipewire 1.6.8):
 
 | Fact | Proof |
 |---|---|
-| `SoundEffect` loads a 16-bit PCM WAV (`status` Ready), including inside the real `quickshell` binary | `qmltestrunner` probe; throwaway `quickshell -p` probe printed `status 2` (Ready) |
-| `SoundEffect` rejects OGG (`status` Error, same as a missing file) | `qmltestrunner` probe |
-| `MediaPlayer` loads OGG Vorbis (`LoadedMedia`) through the ffmpeg backend | `qmltestrunner` probe |
-| A `Loader` whose file imports a missing module ends in `Loader.Error`, `item === null`, and its parent lives on | `qmltestrunner` probe |
-| qt6-multimedia is on stock omarchy installs, but only through `omacut` in `omarchy-base.packages`. It is not a hard dependency of `omarchy` or `quickshell` | `pacman -Qi` |
-
-The `Loader` is what makes the last row safe. Without QtMultimedia the game
-runs silent. It does not fail to open.
+| `pw-play` plays the WAV cues and the Ogg Vorbis tracks (libsndfile) | `quickshell -p` probe against a private PipeWire: exit 0 |
+| An unreadable file exits 1, and a SIGTERM or SIGKILL shows as a crash exit | same probe: `exited 1 0`, `exited 15 1` |
+| A missing binary never emits `started` or `exited`. `running` just drops | same probe |
+| `running = false; running = true` restarts a running voice | same probe |
+| `SIGSTOP` then `SIGCONT` resumes the tune where it stopped | 8 s track held 3 s, exited 0 after 11 s |
+| `pw-play` ships in `pipewire-audio`, which `pipewire-pulse` and `pipewire-alsa` require | `pacman -Qi`. Where it is missing, each voice warns once and stays silent |
 
 ## Boundary
 
@@ -76,10 +100,10 @@ renamed, and events are in-memory only, so there is no migration.
 //   ... | "enemyDestroyed" | "gameOver" | "complete"
 ```
 
-The QML half is not written. Its contract:
+The QML half's contract:
 
 ```qml
-// src/Audio.qml: the only file that imports QtMultimedia.
+// src/Audio.qml: voices from src/AudioVoice.qml, one pw-play child each.
 Item {
   property bool muted: false
   function playCues(cueIds) {}  // unknown id: one console.warn, never a throw
@@ -133,23 +157,26 @@ Music follows phase:
 ## Assets
 
 - **Effects:** `assets/audio/sfx/<cue-id>.wav`, 16-bit PCM, mono, 48 kHz,
-  under about 1 s. `SoundEffect` plays WAV only (probe above).
-- **Music:** `assets/audio/music/<track-id>.ogg`, Ogg Vorbis, looped by
-  `MediaPlayer`, so it needs a seamless loop point.
+  under about 1 s.
+- **Music:** `assets/audio/music/<track-id>.ogg`, Ogg Vorbis. The voice starts
+  it again when it ends, so each loop has a short gap of one `pw-play` spawn.
 - **Names:** ids are kebab-case file stems, pinned by the test. Add ids; never
   rename one that has shipped.
 - **Paths:** everything stays inside the repo, because plugin validation
   forbids symlinks and `..` (architecture.md "Packaging"). `Audio.qml`
-  resolves files with `Qt.resolvedUrl("../assets/audio/sfx/" + id + ".wav")`.
-- **Missing files:** a missing or bad file leaves that voice in
-  `SoundEffect.Error`. It plays nothing and warns once. It is never a fault.
+  resolves files with `Qt.resolvedUrl("../assets/audio/sfx/")` and hands
+  `pw-play` the local path.
+- **Missing files:** `pw-play` exits 1 on a missing or bad file. That voice
+  warns once and never spawns again. It is never a fault.
 
 ## Lifecycle
 
 - The `Loader` is `active` only while the overlay is open and not faulted.
-  Closing, faulting and `hide` all destroy every voice and the player.
-  Nothing outlives the overlay.
-- Opening loads the voices fresh. Their load latency is `unproven`.
+  Closing, faulting and `hide` all destroy every voice, and each destroyed
+  `Process` SIGKILLs its `pw-play`, even one held by `SIGSTOP`. Nothing
+  outlives the overlay (`tests/quickshell/tst_close_cycle.qml`).
+- Opening creates the voices fresh. A voice spawns `pw-play` only when it
+  plays.
 - `cuesFor` runs after **every** `Engine.step`, in `onTick`, never in
   `onTicked`:
   - `step` clears `events` first (`engine.mjs:167`).
@@ -177,22 +204,24 @@ the stale modules. Toggling or re-enabling the plugin does not help. Only
     process each run, so no cache is involved.
   - Before any live listen, run `omarchy restart shell`. Do not trust what a
     long-lived shell plays.
-  - Treat replacing a `.wav` the same way. Whether `SoundEffect` caches
-    samples by URL across a reload is `unproven`, and the design does not
-    depend on it either way.
+  - A replaced `.wav` plays at once, since `pw-play` reads the file on every
+    play.
 - **Shipped updates:** after `omarchy plugin update`, the new sounds arrive
   with the next shell restart. The README says so.
 
 ## What can go wrong
 
-**Worst case: sound breaking the game or the shared shell.** Guards:
-- The `Loader` confines a missing module or a broken `Audio.qml` to
-  `audio.item === null`.
+**Worst case: sound breaking the game or the shared shell.** It happened once:
+in-process QtMultimedia wedged the shell (see "Decision"). Guards:
+- No audio runs in the shell process. `check.sh` rejects `import
+  QtMultimedia` anywhere under `src/`.
+- Every voice is a child process owned by the `Loader`'s item, and
+  `tests/quickshell/tst_close_cycle.qml` proves none outlives five closes.
+- The `Loader` confines a broken `Audio.qml` to `audio.item === null`. An
+  `AudioVoice.qml` that cannot load leaves the game silent.
 - `sound()` has its own `try`, separate from the engine `try`
   (`Overlay.qml:217-222`). A sound error warns once and never calls
   `root.fail()`.
-- The core cannot import QtMultimedia: `check.sh` greps `src/audio` too, and
-  a planted import is rejected.
 
 **Second risk: silent drops.**
 - The multi-tick drain is the likely bug. `tst_audio.qml` catches it: a
@@ -240,6 +269,11 @@ hears each cue once in a live run.
 2. **Mute key:** whether to have one. Proposal: `M`, in-session only, since
    game-design §8 rules out saved settings.
 3. **Volumes:** default levels. Proposal: effects 0.6, music 0.35.
-4. **Machines without a pulse server:** `pipewire-pulse` is in
-   `omarchy-other.packages`, not base. What Qt's audio output does without it
-   is `unproven`. The expected result is silence, not a crash.
+4. **Machines without `pw-play`:** it ships in `pipewire-audio`, which omarchy
+   pulls in only through `pipewire-pulse` and `pipewire-alsa`. Without it,
+   each voice warns once and the game runs silent. Whether every stock
+   install has it is `unproven`.
+5. **Live proof of the fix:** after `omarchy restart shell`, open and close
+   the game five times with sound on, then check that no `pw-play` is left
+   and the shell still responds. It must run on an idle desktop or with the
+   person's agreement.
