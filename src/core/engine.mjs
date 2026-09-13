@@ -25,9 +25,11 @@ import {
   SPAWN_INTERVAL,
   TILE,
   WAVE_ADVANCE_FRACTION,
+  seconds,
 } from "./constants.mjs";
 import { loadLevels } from "./levels.mjs";
 import { overlaps, tileAt, tilesUnder, TERRAIN } from "./collision.mjs";
+import { nextRandom } from "./rng.mjs";
 
 /** @typedef {"up" | "down" | "left" | "right"} Dir */
 
@@ -349,6 +351,7 @@ function makeEnemyTank(state, type, pos) {
     invulnerable: 0,
     burstLeft: 0,
     aimTicks: 0,
+    blockedTicks: 0,
   };
 }
 
@@ -399,20 +402,6 @@ function moveTank(tank, dir, speed, tiles, blockers) {
   tank.y = ny;
   tank.moving = true;
   return true;
-}
-
-/** Greedy step toward (or, given a point past `tank`, away from) `target`: try the axis with the larger gap first. */
-function moveToward(tank, target, speed, tiles, blockers) {
-  const dx = target.x - tank.x;
-  const dy = target.y - tank.y;
-  const horizontalFirst = Math.abs(dx) >= Math.abs(dy);
-  const horizontalDir = dx === 0 ? null : dx > 0 ? "right" : "left";
-  const verticalDir = dy === 0 ? null : dy > 0 ? "down" : "up";
-  const dirs = horizontalFirst ? [horizontalDir, verticalDir] : [verticalDir, horizontalDir];
-  for (const dir of dirs) {
-    if (dir && moveTank(tank, dir, speed, tiles, blockers)) return;
-  }
-  tank.moving = false;
 }
 
 /** True when `from` and `to` share a tile row or column with no wall between them (what a shell would actually hit). */
@@ -553,24 +542,242 @@ function stepShells(state) {
 }
 
 // ---- enemy AI (game-design §3) ----
+//
+// Enemies path over the tile grid. pathCosts() is a distance field: what it
+// costs to reach a goal tile from every tile. An enemy picks a direction only
+// while it sits exactly on a tile, then drives the whole tile, so its turns
+// never need the axis snap. (The snap is what made the old greedy mover undo
+// its own progress every tick.) Brick is passable at a price: an enemy whose
+// next step is brick stops and shoots it.
 
-function closerTarget(state, enemy) {
-  if (!state.player) return state.basePos;
-  return manhattan(enemy, state.player) < manhattan(enemy, state.basePos) ? state.player : state.basePos;
+// Not game-design numbers. BRICK_PATH_COST: how many open tiles a brick on a
+// path is worth, for the stop to shoot through it. BLOCKED_PATIENCE: ticks an
+// enemy waits behind another tank before it tries another way.
+const BRICK_PATH_COST = 4;
+const BLOCKED_PATIENCE = seconds(0.75);
+const DIRS = Object.freeze(["up", "left", "right", "down"]);
+const REVERSE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
+
+/** The tile holding the centre of a TILE × TILE box at `pos`. */
+const tileOf = (pos) => ({ col: Math.floor((pos.x + TILE / 2) / TILE), row: Math.floor((pos.y + TILE / 2) / TILE) });
+const indexOf = (tile) => tile.row * GRID + tile.col;
+const neighbour = (tile, dir) => ({ col: tile.col + DIR_DELTA[dir].dx, row: tile.row + DIR_DELTA[dir].dy });
+const isAligned = (tank) => tank.x % TILE === 0 && tank.y % TILE === 0;
+
+/** What driving into `tile` adds to a path: 1 on open ground, more for brick, Infinity where no tank goes. */
+function enterCost(tiles, tile) {
+  const glyph = tileAt(tiles, tile.col, tile.row);
+  if (glyph === null) return Infinity;
+  if (glyph === Glyph.BRICK) return 1 + BRICK_PATH_COST;
+  return TERRAIN[glyph].blocksTank ? Infinity : 1;
 }
 
-function stepGrunt(state, enemy, speed) {
-  const target = closerTarget(state, enemy);
-  moveToward(enemy, target, speed, state.tiles, otherTanks(state, enemy));
-  if (enemy.cooldown <= 0 && hasLineOfSight(state, enemy, target)) {
-    fireShell(state, enemy, speed * SHELL_SPEED_FACTOR);
-    enemy.cooldown = ENEMY_TYPES.grunt.fireCooldown;
+/**
+ * Dijkstra from `goal`: costs[i] is the cheapest path from tile i to `goal`,
+ * Infinity where there is none. The goal itself is enterable even when solid,
+ * so a path can end on the base. 169 tiles make a linear scan for the next
+ * tile cheap enough to redo every tick.
+ */
+function pathCosts(tiles, goal) {
+  const costs = new Array(GRID * GRID).fill(Infinity);
+  const done = new Array(GRID * GRID).fill(false);
+  const goalIndex = indexOf(goal);
+  costs[goalIndex] = 0;
+  for (;;) {
+    let best = -1;
+    for (let i = 0; i < costs.length; i++) {
+      if (!done[i] && costs[i] < Infinity && (best < 0 || costs[i] < costs[best])) best = i;
+    }
+    if (best < 0) return costs;
+    done[best] = true;
+    const tile = { col: best % GRID, row: Math.floor(best / GRID) };
+    const step = best === goalIndex ? 1 : enterCost(tiles, tile);
+    if (step === Infinity) continue;
+    for (const dir of DIRS) {
+      const next = neighbour(tile, dir);
+      if (tileAt(tiles, next.col, next.row) === null) continue;
+      costs[indexOf(next)] = Math.min(costs[indexOf(next)], costs[best] + step);
+    }
   }
+}
+
+/** This tick's distance fields: to the base, and to the player while alive. */
+function enemyPaths(state) {
+  return {
+    base: pathCosts(state.tiles, tileOf(state.basePos)),
+    player: state.player ? pathCosts(state.tiles, tileOf(state.player)) : null,
+  };
+}
+
+/**
+ * The first step of the cheapest path from `enemy`'s tile along `costs`, or
+ * null when none leads to the goal. Ties keep the current heading, otherwise
+ * the seeded RNG breaks them, so enemies do not all file down the same lane.
+ */
+function pathDir(state, enemy, costs) {
+  const here = tileOf(enemy);
+  let best = Infinity;
+  let choices = [];
+  for (const dir of DIRS) {
+    const next = neighbour(here, dir);
+    if (tileAt(state.tiles, next.col, next.row) === null) continue;
+    const rest = costs[indexOf(next)];
+    const cost = rest === 0 ? 1 : enterCost(state.tiles, next) + rest;
+    if (cost < best) {
+      best = cost;
+      choices = [dir];
+    } else if (cost === best) {
+      choices.push(dir);
+    }
+  }
+  if (best === Infinity) return null;
+  if (choices.includes(enemy.dir)) return enemy.dir;
+  return choices[Math.floor(nextRandom(state) * choices.length)];
+}
+
+/** Any open direction, keeping the current heading while it is open: for an enemy with no path. */
+function wanderDir(state, enemy) {
+  const here = tileOf(enemy);
+  const open = DIRS.filter((dir) => enterCost(state.tiles, neighbour(here, dir)) === 1);
+  if (open.includes(enemy.dir)) return enemy.dir;
+  return open.length > 0 ? open[Math.floor(nextRandom(state) * open.length)] : null;
+}
+
+/**
+ * Moves `enemy` up to `speed` px along `dir`, stopping exactly on the next
+ * tile line so its next decision starts aligned. Only called aligned or along
+ * the current axis, so it never needs moveTank's snap. Returns whether it moved.
+ */
+function advance(state, enemy, dir, speed) {
+  const { dx, dy } = DIR_DELTA[dir];
+  const from = dx !== 0 ? enemy.x : enemy.y;
+  const line = dx + dy > 0 ? (Math.floor(from / TILE) + 1) * TILE : (Math.ceil(from / TILE) - 1) * TILE;
+  const to = Math.abs(line - from) <= speed ? line : from + (dx + dy) * speed;
+  const rect = { x: dx !== 0 ? to : enemy.x, y: dy !== 0 ? to : enemy.y, w: TILE, h: TILE };
+  enemy.dir = dir;
+  enemy.moving = canOccupy(rect, state.tiles, otherTanks(state, enemy), tankRect(enemy));
+  if (enemy.moving) {
+    enemy.x = rect.x;
+    enemy.y = rect.y;
+  }
+  return enemy.moving;
+}
+
+/**
+ * One tick of enemy movement. Mid-tile, it finishes the tile it started, or
+ * backs out once a tank has blocked it for BLOCKED_PATIENCE. On a tile it
+ * takes `dir` (null: wander): open ground it drives into, brick it stops and
+ * shoots, a solid goal such as the base it faces and waits at, and a tank in
+ * the way it waits behind, then drives around.
+ */
+function driveEnemy(state, enemy, speed, dir) {
+  if (!isAligned(enemy)) {
+    if (advance(state, enemy, enemy.dir, speed)) enemy.blockedTicks = 0;
+    else if (++enemy.blockedTicks > BLOCKED_PATIENCE) {
+      enemy.blockedTicks = 0;
+      advance(state, enemy, REVERSE[enemy.dir], speed);
+    }
+    return;
+  }
+  const heading = dir || wanderDir(state, enemy);
+  if (!heading) {
+    enemy.moving = false;
+    return;
+  }
+  const next = neighbour(tileOf(enemy), heading);
+  const glyph = tileAt(state.tiles, next.col, next.row);
+  if (glyph === Glyph.BRICK || glyph === null || TERRAIN[glyph].blocksTank) {
+    enemy.dir = heading;
+    enemy.moving = false;
+    if (glyph === Glyph.BRICK) enemyFire(state, enemy, speed, TILE);
+    return;
+  }
+  if (advance(state, enemy, heading, speed)) {
+    enemy.blockedTicks = 0;
+  } else if (++enemy.blockedTicks > BLOCKED_PATIENCE) {
+    enemy.blockedTicks = 0;
+    const here = tileOf(enemy);
+    const others = DIRS.filter((d) => d !== heading && enterCost(state.tiles, neighbour(here, d)) === 1);
+    if (others.length > 0) advance(state, enemy, others[Math.floor(nextRandom(state) * others.length)], speed);
+  }
+}
+
+/** Whether another enemy stands within `reach` px ahead of `enemy`'s muzzle, in its own shell's way. */
+function friendlyInLane(state, enemy, reach) {
+  const muzzle = muzzleFor(enemy);
+  const { dx, dy } = DIR_DELTA[enemy.dir];
+  const lane = {
+    x: dx < 0 ? muzzle.x - reach : muzzle.x,
+    y: dy < 0 ? muzzle.y - reach : muzzle.y,
+    w: SHELL_SIZE + Math.abs(dx) * reach,
+    h: SHELL_SIZE + Math.abs(dy) * reach,
+  };
+  return state.enemies.some((other) => other.id !== enemy.id && overlaps(lane, tankRect(other)));
+}
+
+/**
+ * Fires `enemy`'s shot in its facing, `reach` px at whatever it aims at,
+ * unless it is cooling down or another enemy is in the way. Hunters open a
+ * burst. Snipers never call this: they aim first (stepSniper).
+ */
+function enemyFire(state, enemy, speed, reach) {
+  if (enemy.cooldown > 0 || friendlyInLane(state, enemy, reach)) return;
+  const def = ENEMY_TYPES[enemy.kind];
+  fireShell(state, enemy, speed * SHELL_SPEED_FACTOR);
+  enemy.burstLeft = def.burst ? def.burst - 1 : 0;
+  enemy.cooldown = enemy.burstLeft > 0 ? def.burstGap : def.fireCooldown;
+}
+
+/**
+ * Turns `enemy` to face `target` when the two share a clear row or column and
+ * the turn needs no snap (aligned, or already facing it). Returns whether it
+ * now faces the target.
+ */
+function faceIfInSight(state, enemy, target) {
+  if (!hasLineOfSight(state, enemy, target)) return false;
+  const from = tileOf(enemy);
+  const to = tileOf(target);
+  if (from.col === to.col && from.row === to.row) return false;
+  const dir = from.col === to.col ? (to.row > from.row ? "down" : "up") : to.col > from.col ? "right" : "left";
+  if (dir !== enemy.dir) {
+    if (!isAligned(enemy)) return false;
+    enemy.dir = dir;
+  }
+  return true;
+}
+
+/** Heads for the base, or for the player when the player is the shorter path; shoots either on sight. */
+function stepGrunt(state, enemy, speed, paths) {
+  const here = indexOf(tileOf(enemy));
+  const chasePlayer = paths.player !== null && paths.player[here] < paths.base[here];
+  if (enemy.cooldown <= 0) {
+    let targets = [state.basePos];
+    if (state.player) targets = chasePlayer ? [state.player, state.basePos] : [state.basePos, state.player];
+    const seen = targets.find((target) => faceIfInSight(state, enemy, target));
+    if (seen) enemyFire(state, enemy, speed, manhattan(enemy, seen));
+  }
+  driveEnemy(state, enemy, speed, pathDir(state, enemy, chasePlayer ? paths.player : paths.base));
 }
 
 // Not a game-design number (only "closes to short range" is specified):
 // how close, in tiles, before a sniper retreats.
 const SNIPER_RETREAT_TILES = 3;
+
+/** The open neighbouring tile that puts the most distance between a sniper and the player, if any is farther. */
+function retreatDir(state, enemy) {
+  const here = tileOf(enemy);
+  const gap = (tile) => Math.abs(tile.col * TILE - state.player.x) + Math.abs(tile.row * TILE - state.player.y);
+  let best = null;
+  let bestGap = gap(here);
+  for (const dir of DIRS) {
+    const next = neighbour(here, dir);
+    if (enterCost(state.tiles, next) === 1 && gap(next) > bestGap) {
+      best = dir;
+      bestGap = gap(next);
+    }
+  }
+  return best;
+}
 
 function stepSniper(state, enemy, level, speed) {
   if (enemy.aimTicks > 0) {
@@ -585,51 +792,43 @@ function stepSniper(state, enemy, level, speed) {
     enemy.moving = false;
     return;
   }
-  if (manhattan(enemy, state.player) / TILE < SNIPER_RETREAT_TILES) {
-    const away = {
-      x: enemy.x + Math.sign(enemy.x - state.player.x || 1) * TILE,
-      y: enemy.y + Math.sign(enemy.y - state.player.y || 1) * TILE,
-    };
-    moveToward(enemy, away, speed, state.tiles, otherTanks(state, enemy));
-  } else {
-    enemy.moving = false;
-  }
+  const retreat = manhattan(enemy, state.player) / TILE < SNIPER_RETREAT_TILES ? retreatDir(state, enemy) : null;
+  if (retreat || !isAligned(enemy)) driveEnemy(state, enemy, speed, retreat);
+  else enemy.moving = false;
   const maxRange = (level.rules && level.rules.sniperRangeTiles) || GRID;
   if (
     enemy.cooldown <= 0 &&
-    hasLineOfSight(state, enemy, state.player) &&
-    tileDistance(enemy, state.player) <= maxRange
+    tileDistance(enemy, state.player) <= maxRange &&
+    faceIfInSight(state, enemy, state.player)
   ) {
     enemy.aimTicks = ENEMY_TYPES.sniper.aimFlash;
   }
 }
 
-function stepHunter(state, enemy, speed) {
+/** Paths to the player (never the base) and bursts on sight; stands still while a burst is under way. */
+function stepHunter(state, enemy, speed, paths) {
   const def = ENEMY_TYPES[enemy.kind];
-  if (state.player) moveToward(enemy, state.player, speed, state.tiles, otherTanks(state, enemy));
-  else enemy.moving = false;
-
   if (enemy.burstLeft > 0) {
     if (enemy.cooldown <= 0) {
       fireShell(state, enemy, speed * SHELL_SPEED_FACTOR);
       enemy.burstLeft--;
       enemy.cooldown = enemy.burstLeft > 0 ? def.burstGap : def.fireCooldown;
     }
+    enemy.moving = false;
     return;
   }
-  if (enemy.cooldown <= 0 && state.player && hasLineOfSight(state, enemy, state.player)) {
-    fireShell(state, enemy, speed * SHELL_SPEED_FACTOR);
-    enemy.burstLeft = def.burst - 1;
-    enemy.cooldown = enemy.burstLeft > 0 ? def.burstGap : def.fireCooldown;
+  if (enemy.cooldown <= 0 && state.player && faceIfInSight(state, enemy, state.player)) {
+    enemyFire(state, enemy, speed, manhattan(enemy, state.player));
   }
+  driveEnemy(state, enemy, speed, paths.player ? pathDir(state, enemy, paths.player) : null);
 }
 
-function stepEnemy(state, enemy, level) {
+function stepEnemy(state, enemy, level, paths) {
   if (enemy.cooldown > 0) enemy.cooldown--;
   const speed = enemySpeed(level, enemy.kind);
   if (enemy.kind === "sniper") stepSniper(state, enemy, level, speed);
-  else if (enemy.kind === "hunter" || enemy.kind === "eliteHunter") stepHunter(state, enemy, speed);
-  else stepGrunt(state, enemy, speed);
+  else if (enemy.kind === "hunter" || enemy.kind === "eliteHunter") stepHunter(state, enemy, speed, paths);
+  else stepGrunt(state, enemy, speed, paths);
 }
 
 // ---- spawning and waves ----
@@ -728,7 +927,10 @@ function stepPlaying(state, input, edge) {
   const level = state.levels[state.levelIndex];
   stepPlayer(state, input, edge);
   stepSpawning(state);
-  for (const enemy of state.enemies) stepEnemy(state, enemy, level);
+  if (state.enemies.length > 0) {
+    const paths = enemyPaths(state);
+    for (const enemy of state.enemies) stepEnemy(state, enemy, level, paths);
+  }
   stepShells(state);
   maybeAdvanceWave(state);
 }
