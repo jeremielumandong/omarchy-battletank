@@ -62,7 +62,11 @@ The old objections to `Process` no longer hold:
   `tests/quickshell/tst_close_cycle.qml` proves no voice outlives a close.
 - **Testing:** the QML suite injects `tests/qml/FakeVoice.qml`, and
   `check.sh` runs the real voice in the real `quickshell` binary.
-- **Cost:** a 0.12 s shot ran from spawn to exit in 0.14 s.
+- **Cost:** a 0.12 s shot ran from spawn to exit in 0.14 s. Each `play()` call
+  forks a fresh `pw-play` child; the measured ~20ms overhead is small. With a
+  4-voice pool, up to 4 shots run concurrently instead of serially, so the fork
+  cost is distributed across parallel execution rather than blocking one voice
+  at a time. This closes the audible-lag risk.
 
 **Why this mechanism holds on this stack** (probed 2026-09-13, quickshell
 0.3.1, pipewire 1.6.8):
