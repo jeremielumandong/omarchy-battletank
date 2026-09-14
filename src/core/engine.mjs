@@ -108,6 +108,10 @@ import { nextRandom } from "./rng.mjs";
  * @property {number} seed           rng.mjs state.
  * @property {InputState} prevInput
  * @property {GameEvent[]} events
+ * @property {Dir|null} queuedDir    A direction requested but blocked this
+ *   tick, retried automatically for a short window once the player releases
+ *   input (movement input-buffering, does not affect Tank or axis-snap).
+ * @property {number} queuedTicks    Ticks left before queuedDir expires.
  */
 
 /** @returns {InputState} The input of a player touching nothing. */
@@ -145,6 +149,8 @@ export function createGame(levels, options = {}) {
     seed: options.seed ?? 1,
     prevInput: emptyInput(),
     events: [],
+    queuedDir: null,
+    queuedTicks: 0,
     // Not in the typedef, but plain data and load-bearing for spawning and
     // ids: the base tile, the level's player spawn and sniper posts, the next
     // ENEMY_SPAWN_SLOTS index, and a monotonic id counter. Kept on GameState
@@ -253,6 +259,8 @@ function enterLevelStart(state, levelIndex) {
   state.waveIndex = 0;
   state.spawnQueue = flattenWave(level.waves[0]);
   state.spawnTicks = 0;
+  state.queuedDir = null;
+  state.queuedTicks = 0;
   enterPhase(state, "levelStart");
 }
 
@@ -394,8 +402,8 @@ function canOccupy(rect, tiles, blockers, from) {
 function moveTank(tank, dir, speed, tiles, blockers) {
   if (tank.dir !== dir) {
     if (isHorizontal(tank.dir) !== isHorizontal(dir)) {
-      if (isHorizontal(tank.dir)) tank.y = Math.round(tank.y / TILE) * TILE;
-      else tank.x = Math.round(tank.x / TILE) * TILE;
+      if (isHorizontal(tank.dir)) tank.x = Math.round(tank.x / TILE) * TILE;
+      else tank.y = Math.round(tank.y / TILE) * TILE;
     }
     tank.dir = dir;
   }
@@ -480,6 +488,8 @@ function destroyTank(state, tank) {
   state.events.push({ kind: "explosion", x: tank.x, y: tank.y });
   if (tank.kind === "player") {
     state.player = null;
+    state.queuedDir = null;
+    state.queuedTicks = 0;
     state.lives--;
     if (state.lives <= 0) enterGameOver(state);
     else {
@@ -913,6 +923,13 @@ function maybeAdvanceWave(state) {
   }
 }
 
+// How long a direction request that was blocked this tick keeps retrying
+// automatically once the player stops actively requesting anything, instead
+// of the tank sitting dead-stopped until re-pressed. Not a game-design
+// number (only the grid-aligned-at-all-times guarantee is spec'd); purely a
+// UX smoothing window, and never overrides an actively held direction.
+const INPUT_BUFFER_TICKS = seconds(0.15);
+
 function stepPlayer(state, input, edge) {
   if (!state.player) {
     if (state.respawnTicks > 0) {
@@ -927,8 +944,25 @@ function stepPlayer(state, input, edge) {
   const player = state.player;
   if (player.invulnerable > 0) player.invulnerable--;
   if (player.cooldown > 0) player.cooldown--;
-  if (input.dir) moveTank(player, input.dir, PLAYER.speed, state.tiles, otherTanks(state, player));
-  else player.moving = false;
+  const dir = input.dir || (state.queuedTicks > 0 ? state.queuedDir : null);
+  if (dir) {
+    const moved = moveTank(player, dir, PLAYER.speed, state.tiles, otherTanks(state, player));
+    if (moved) {
+      state.queuedDir = null;
+      state.queuedTicks = 0;
+    } else if (input.dir) {
+      // Actively requested but blocked this tick (e.g. axis-snap landed
+      // short of an opening, or another tank is briefly in the way): buffer
+      // it so a moment's delay in the block clearing doesn't need a re-press.
+      state.queuedDir = input.dir;
+      state.queuedTicks = INPUT_BUFFER_TICKS;
+    } else {
+      state.queuedTicks--;
+      if (state.queuedTicks <= 0) state.queuedDir = null;
+    }
+  } else {
+    player.moving = false;
+  }
   const liveShells = state.shells.reduce((n, s) => n + (s.ownerId === player.id ? 1 : 0), 0);
   if (edge.fire && player.cooldown <= 0 && liveShells < PLAYER.maxLiveShells) {
     fireShell(state, player, PLAYER.speed * SHELL_SPEED_FACTOR);
