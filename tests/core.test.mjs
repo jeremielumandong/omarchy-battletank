@@ -150,6 +150,108 @@ test("a player shell destroys the brick it hits", () => {
   assert.equal(state.tiles[5 * 13 + 0], ".");
 });
 
+// ---- movement: axis-snap on turn, input buffering ----
+
+// Open field with the player in the middle, room to move on every axis
+// before hitting the boundary (game-design §1: axis change snaps the axis
+// being left to the nearest gridline).
+const OPEN_MID = fixture([
+  "............1",
+  ".............",
+  ".............",
+  ".............",
+  ".............",
+  ".............",
+  "......P......",
+  ".............",
+  ".............",
+  ".............",
+  ".............",
+  ".............",
+  "......E......",
+]);
+
+// Regression for the bug docs/movement-feel-analysis.md finding 2 found:
+// moveTank snapped the axis NOT being left (a no-op, since that axis never
+// moved) instead of the one actually drifted off-grid, so the drift lingered
+// for the entire next leg instead of being corrected the tick the turn
+// happens.
+test("turning snaps the axis just left (the one that drifted), not the one already aligned", () => {
+  const state = intoPlaying(createGame([OPEN_MID]));
+  run(state, { dir: "right" }, 5); // 5px off the gridline on x; y untouched
+  assert.equal(state.player.x % TILE, 5, `expected the drift the repro assumes, got x=${state.player.x}`);
+  assert.equal(state.player.y % TILE, 0);
+
+  run(state, { dir: "up" }, 1); // turning: x is the axis being left, so it must snap this tick
+  assert.equal(state.player.x % TILE, 0, `x should be grid-aligned the tick the turn happens, got x=${state.player.x}`);
+});
+
+test("the drifted axis stays grid-aligned for the entire following leg (discovery repro)", () => {
+  const state = intoPlaying(createGame([OPEN_MID]));
+  run(state, { dir: "right" }, 5);
+  run(state, { dir: "up" }, 3);
+  assert.equal(state.player.x % TILE, 0, `x should stay aligned throughout the "up" leg, got x=${state.player.x}`);
+});
+
+test("axis-snap also corrects the other way: leaving vertical movement snaps y", () => {
+  const state = intoPlaying(createGame([OPEN_MID]));
+  run(state, { dir: "up" }, 7);
+  assert.equal(state.player.y % TILE, TILE - 7, `expected the drift the repro assumes, got y=${state.player.y}`);
+
+  run(state, { dir: "left" }, 1);
+  assert.equal(state.player.y % TILE, 0, `y should be grid-aligned the tick the turn happens, got y=${state.player.y}`);
+});
+
+// A direction requested while genuinely blocked (a wall, not a momentary
+// gap) is remembered for a short window and retried automatically once the
+// block lifts, instead of requiring the player to notice and re-press.
+test("a blocked turn is buffered and completes on its own once the block clears", () => {
+  const state = intoPlaying(createGame([OPEN])); // brick directly above the spawn
+  const startY = state.player.y;
+
+  run(state, { dir: "up" }, 1); // blocked by the brick
+  assert.equal(state.player.moving, false);
+  assert.equal(state.player.dir, "up");
+  assert.equal(state.queuedDir, "up", "the blocked request should be buffered");
+
+  run(state, {}, 2); // key released; nothing re-presses "up"
+  assert.equal(state.player.y, startY, "still blocked, no phantom movement");
+  assert.equal(state.queuedDir, "up", "buffer should still be live");
+
+  state.tiles[5 * 13 + 0] = "."; // the block lifts, e.g. a shell had destroyed it
+  run(state, {}, 1);
+
+  assert.equal(state.player.moving, true);
+  assert.ok(state.player.y < startY, `expected the buffered "up" to complete without a re-press, y=${state.player.y}`);
+});
+
+test("a buffered turn expires instead of firing arbitrarily late", () => {
+  const state = intoPlaying(createGame([OPEN])); // brick directly above, never clears
+  const startY = state.player.y;
+  const startX = state.player.x;
+
+  run(state, { dir: "up" }, 1);
+  assert.equal(state.queuedDir, "up");
+  run(state, {}, 30); // well past the buffer window, key never re-pressed
+  assert.equal(state.queuedDir, null, "a stale buffered turn should expire");
+  assert.equal(state.player.moving, false);
+  assert.equal(state.player.x, startX);
+  assert.equal(state.player.y, startY);
+});
+
+test("an actively held new direction overrides a buffered one immediately", () => {
+  const state = intoPlaying(createGame([OPEN])); // brick above blocks "up"
+  run(state, { dir: "up" }, 1);
+  assert.equal(state.queuedDir, "up");
+
+  const y0 = state.player.y;
+  run(state, { dir: "right" }, 1); // an explicit new request, still held
+  assert.equal(state.player.dir, "right");
+  assert.equal(state.player.moving, true);
+  assert.ok(state.player.x > 0, "should move right immediately, same tick");
+  assert.equal(state.player.y, y0, "buffered \"up\" must not fire once superseded");
+});
+
 // ---- enemy spawning: the three fixed NES Battle City slots ----
 
 const asLevelOne = (level) => ({ ...structuredClone(level), id: 1 });
